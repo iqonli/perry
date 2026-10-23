@@ -1,0 +1,1514 @@
+<!DOCTYPE html>
+<!--
+    ezEarth 发布版源码说明
+    ------------------------------------------------------------
+    本文件是一个完整的单文件网页应用，包含 HTML、CSS 与 JavaScript。
+    主要功能：
+    1. 左栏：主 3D 地球光照渲染，以及多个同步辅助图。
+    2. 中栏：显示样式控制、光照参数输入、自动播放控制。
+    3. 右栏：关于、信息显示、小工具、调色模块。
+
+    维护建议：
+    - 修改 UI 结构时，优先检查 HTML 模块区与 CSS 对应选择器。
+    - 修改计算逻辑时，优先检查 getLightParams / computeLightInfo / solarAt。
+    - 修改画布尺寸时，优先检查 resizeCanvas / resizeSyncCanvas / currentRenderSide。
+
+    版权声明：
+    - ezEarth 项目源码：Copyright © 2026 PerryDing，使用 MIT License 开源。
+    - 作者：PerryDing，QQ：34067513
+-->
+
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>ezEarth</title>
+<style>
+/*
+    CSS 总览
+    ------------------------------------------------------------
+    1. 前半部分保留基础布局、表单、按钮、面板、调色盘等样式。
+    2. 后半部分是历次稳定修复项，以 vXX 注释分段保留，便于回溯。
+    3. 大量颜色使用 CSS 变量 --page-bg / --page-fg / --render-bg / --sync-fg，
+       这些变量由调色模块的 applyThemeVars() 动态写入。
+    4. 不建议删除带 vXX 标记的样式块；它们通常是针对特定边界问题的补丁。
+*/
+    :root{--fg:#000;--bg:#fff;--muted:#555;--thin:#d8d8d8;--disabled:#eee;--yellow:#ffff00;--dawn:#c79500;--dusk:#b40000}
+    *{box-sizing:border-box} body{margin:0;background:#fff;color:#000;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.35}
+    .app{min-height:100vh;padding:18px;display:grid;grid-template-columns:minmax(0,430px) minmax(360px,430px) minmax(320px,390px);gap:18px;align-items:start;justify-content:center}.card{border:2px solid #000;background:#fff;border-radius:0}.viewer-card{padding:14px;overflow:calculate;width:100%;max-width:430px}.viewer-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;font-size:13px;color:#333}.canvas-wrap{position:relative;border:1px solid #000;background:#fff;width:620px;height:620px;overflow:calculate;min-width:100px;min-height:100px;max-width:100%;max-height:none}#earthCanvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}#earthCanvas:active{cursor:grabbing}.middle-scroll,.right-side{display:flex;flex-direction:column;gap:14px}.middle-scroll{max-height:calc(100vh - 36px);overflow-y:auto;padding-right:4px}.panel{padding:14px}.panel h2{margin:0 0 8px;font-size:18px}.panel h3{margin:14px 0 8px;font-size:15px;border-top:1px solid #000;padding-top:10px}.panel h3.first{border-top:0;margin-top:4px;padding-top:0}.hint{margin:0 0 12px;color:#444;font-size:13px}.row{display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap}.tight{gap:5px}label.check{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}input[type="checkbox"]{width:16px;height:16px;accent-color:#000;cursor:pointer}input[type="number"],input[type="text"]{width:62px;height:30px;border:1px solid #000;border-radius:0;padding:3px 6px;font:inherit;background:#fff;color:#000}.small{width:48px!important}.medium{width:70px!important}input:disabled,button:disabled{background:var(--disabled);color:#888;border-color:#aaa;cursor:not-allowed}input[type="range"]{accent-color:#000;width:210px}.speed-value{min-width:86px;color:#333;font-size:13px}button{border:1px solid #000;border-radius:0;background:#fff;color:#000;min-height:30px;padding:4px 10px;font:inherit;cursor:pointer}button:hover:not(:disabled){background:#000;color:#fff}button.active{background:#000;color:#fff}.tri-row{display:grid;grid-template-columns:170px 1fr;align-items:center;gap:8px;margin:8px 0}.tri-btn{width:100%;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:0;padding:0;overflow:calculate;background:#fff!important;color:#000!important}.tri-state{flex:1;text-align:center;padding:5px 4px;border-right:1px solid #000;background:#fff;color:#000}.tri-state:last-child{border-right:0}.tri-state.on{background:#000;color:#fff}.switch-btn{min-width:48px}.status{font-size:13px;color:#333;padding:8px;border:1px solid #000;margin-top:8px}.invalid{color:#b40000;border-color:#b40000}.summary-info{font-size:14px;line-height:1.7;margin-bottom:10px}.summary-info div{display:flex;justify-content:space-between;border-bottom:1px solid #ddd;gap:12px}.solar-table{width:100%;border-collapse:collapse;font-size:14px}.solar-table th,.solar-table td{border:1px solid #000;padding:6px 8px;text-align:left;vertical-align:middle}.solar-table th{font-weight:700;background:#fff}.calculate{display:none}.color-chip{display:inline-block;width:12px;height:12px;border:1px solid #000;vertical-align:-1px;margin-right:5px}.about-box{position:relative;display:grid;grid-template-columns:minmax(118px,.86fr) 1.14fr;gap:22px;align-items:start;font-size:14px;line-height:1.75}.about-box:before{content:"";position:absolute;left:44%;top:10px;bottom:10px;width:1px;background:#000}.about-left{min-width:0;text-align:center}.about-right{white-space:pre-line;padding-left:2px}.about-name{font-size:24px;font-weight:700;line-height:1.2;color:#000}.about-meta{font-size:12px;color:#333;margin:4px 0 0}.about-author{margin-top:8px}@media(max-width:1280px){.about-box{grid-template-columns:minmax(118px,.7fr) 1.3fr}.about-box:before{left:38%}}@media(max-width:1280px){.app{grid-template-columns:minmax(0,430px) 430px}.right-side{grid-column:1 / -1;display:grid;grid-template-columns:1fr 1fr}.middle-scroll{max-height:none;overflow:visible;padding-right:0}}@media(max-width:980px){.app{grid-template-columns:1fr}.right-side{display:flex}.middle-scroll{max-height:none;overflow:visible;padding-right:0}.canvas-wrap{width:min(100%,620px);height:min(90vw,620px)}}
+
+    .about-left{display:flex;flex-direction:column;justify-content:center;align-items:flex-end;text-align:right;padding-right:4px;min-height:100%}.about-author{margin-top:6px}.tool-mode-row{margin:8px 0 10px}.duo-btn{width:100%;display:flex;padding:0;overflow:calculate;background:#fff!important;color:#000!important}.duo-state{flex:1;text-align:center;padding:5px 8px;border-right:1px solid #000}.duo-state:last-child{border-right:0}.duo-state.on{background:#000;color:#fff}.tool-mode-panel{margin-top:4px}.tool-scroll{max-height:260px;overflow-y:auto;border:1px solid #000;padding:6px;margin-top:8px;background:#fff}.tool-time-row{display:flex;justify-content:space-between;gap:14px;border-bottom:1px solid #ddd;padding:4px 2px;font-size:13px;line-height:1.45}.tool-time-row:last-child{border-bottom:0}.tool-time-row strong{font-weight:600;white-space:pre;tab-size:8}.tool-time-row span{text-align:right;white-space:nowrap}.tool-select{height:30px;border:1px solid #000;border-radius:0;background:#fff;color:#000;font:inherit;padding:3px 6px;max-width:150px}.tool-second{width:48px!important}.tool-inline-result{font-size:13px;color:#333;margin-left:4px}.tool-invalid{color:#b40000}.tool-target-row{align-items:center}
+  
+    .left-side{display:flex;flex-direction:column;gap:14px;align-items:stretch;width:100%;max-width:430px}
+    .sync-canvas-wrap{position:relative;width:620px;height:620px;border:1px solid #000;background:#fff;overflow:calculate;min-width:100px;min-height:100px;max-width:100%;max-height:none}
+    .sync-canvas{display:block;width:100%;height:100%;touch-action:none}
+    #syncMotionCanvas{cursor:grab}
+    #syncMotionCanvas:active{cursor:grabbing}
+    .sync-hint{font-size:13px;color:#444;margin:0 0 8px}
+    .tool-time-row strong{white-space:pre;tab-size:10;font-weight:600}
+    .about-left{justify-content:center;align-items:flex-end;text-align:right}
+    @media(max-width:980px){.left-side{align-items:stretch}.sync-canvas-wrap{width:min(100%,620px);height:min(90vw,620px)}}
+
+/* v19 layout/color-module additions */
+.middle-scroll{height:calc(100vh - 36px);max-height:none;resize:vertical;overflow-y:auto;min-height:360px}
+#colorPanel{resize:vertical;overflow:auto;min-height:360px;max-height:calc(100vh - 70px)}
+.color-picker-grid{display:grid;grid-template-columns:58px minmax(140px,1fr) 28px 72px 72px;grid-template-rows:auto auto auto;gap:8px;align-items:stretch;margin-top:8px}
+.color-preview{grid-column:1;grid-row:1;width:54px;height:54px;border:1px solid #000;background:#000}
+.color-square{grid-column:2;grid-row:1;width:100%;aspect-ratio:1/1;min-height:138px;border:1px solid #000;position:relative;cursor:crosshair;background:red;overflow:calculate}
+.color-square:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#fff,rgba(255,255,255,0))}
+.color-square:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0),#000)}
+.color-pointer{position:absolute;width:12px;height:12px;border:2px solid #fff;box-shadow:0 0 0 1px #000;border-radius:50%;transform:translate(-6px,-6px);z-index:2;pointer-events:none}
+.hue-slider{grid-column:3;grid-row:1;width:28px;min-height:138px;writing-mode:vertical-lr;direction:rtl;accent-color:#000}
+.color-fields{display:grid;grid-template-columns:1fr;gap:5px}.color-fields.rgb{grid-column:4;grid-row:1}.color-fields.hsl{grid-column:5;grid-row:1}.color-field{display:grid;grid-template-columns:18px 1fr;align-items:center;gap:4px;font-size:12px}.color-field input{width:100%!important;height:25px;padding:2px 4px;font-size:12px}
+.alpha-row{grid-column:2 / 4;grid-row:2;display:grid;grid-template-columns:1fr 54px;gap:8px;align-items:center}.alpha-row input[type="range"]{width:100%}.alpha-row input[type="text"]{width:54px!important;height:26px}
+.hex-row{grid-column:4 / 6;grid-row:2;display:grid;grid-template-columns:38px 1fr;align-items:center;gap:4px}.hex-row input{width:100%!important;height:26px}
+.color-item-list{display:grid;grid-template-columns:1fr;gap:6px;margin-top:10px}.color-item{display:grid;grid-template-columns:minmax(0,1fr) 54px 54px;gap:6px;align-items:center}.color-name{min-width:0;text-align:left;overflow:calculate;text-overflow:ellipsis;white-space:nowrap}.color-apply,.color-reset{padding:4px 6px;min-height:28px}.color-invalid{outline:2px solid #b40000}
+@media(max-width:980px){.middle-scroll{height:auto;resize:none;overflow:visible}.color-picker-grid{grid-template-columns:58px minmax(130px,1fr) 28px 1fr 1fr}.color-square{min-height:130px}}
+
+/* v23 layout and tool fixes: rendering remains v19 drawing path */
+html,body{width:100%;height:100%;margin:0;overflow:auto;background:var(--page-bg,#fff);color:var(--page-fg,#000)}
+body{background:var(--page-bg,#fff)!important;color:var(--page-fg,#000)!important}
+.app{width:100vw;height:100vh;min-height:0;padding:0!important;display:grid!important;grid-template-columns:1fr 8px 1fr 8px 1fr;gap:0!important;align-items:stretch!important;justify-content:stretch!important;overflow:calculate!important;background:var(--page-bg,#fff);color:var(--page-fg,#000)}
+.left-side,.middle-scroll,.right-side{min-width:0!important;width:auto!important;max-width:none!important;height:100%!important;max-height:none!important;overflow-y:auto!important;overflow-x:calculate;padding:14px;display:flex!important;flex-direction:column!important;gap:14px!important;align-items:stretch!important;background:var(--page-bg,#fff);color:var(--page-fg,#000)}
+.viewer-card,.panel{flex:0 0 auto}.viewer-card{max-width:none!important;width:100%!important}.card{background:var(--page-bg,#fff);color:var(--page-fg,#000);border-color:var(--page-fg,#000)}
+.panel h3{border-top-color:var(--page-fg,#000)}button,input,select{border-color:var(--page-fg,#000);color:var(--page-fg,#000);background:var(--page-bg,#fff)}button:hover:not(:disabled),button.active,.tri-state.on,.duo-state.on{background:var(--page-fg,#000)!important;color:var(--page-bg,#fff)!important}.tri-state,.duo-state{border-color:var(--page-fg,#000)}
+.canvas-wrap,.sync-canvas-wrap{background:var(--render-bg,#fff)!important;max-width:100%;flex:0 0 auto}.col-resizer{width:8px;height:100%;background:#d8d8d8;cursor:col-resize;touch-action:none;border-left:1px solid #000;border-right:1px solid #000;z-index:5}.col-resizer:hover,.col-resizer.dragging{background:#000}
+.custom-page .app{box-shadow:0 0 0 1px var(--page-fg,#000)}
+#colorPanel{resize:none;overflow:visible;min-height:0;max-height:none}.color-picker-grid{display:grid;grid-template-columns:58px minmax(136px,1fr) 24px 82px 82px;grid-template-rows:auto auto;gap:10px 12px;align-items:start;margin-top:8px}.color-preview{grid-column:1;grid-row:1;width:54px;height:54px;border:1px solid var(--page-fg,#000)}.color-square{grid-column:2;grid-row:1;width:100%;aspect-ratio:1/1;min-height:150px;border:1px solid var(--page-fg,#000);position:relative;cursor:crosshair;background:red;overflow:calculate}.hue-slider{display:none}.hue-rail{grid-column:3;grid-row:1;width:24px;min-height:150px;height:100%;border:1px solid var(--page-fg,#000);position:relative;cursor:pointer;background:linear-gradient(to bottom,#f00 0%,#ff0 16.66%,#0f0 33.33%,#0ff 50%,#00f 66.66%,#f0f 83.33%,#f00 100%)}.hue-pointer{position:absolute;left:-4px;right:-4px;height:5px;border:1px solid #000;background:#fff;transform:translateY(-2.5px);pointer-events:none}.color-fields{display:grid;grid-template-columns:1fr;gap:8px;align-content:start}.color-fields.rgb{grid-column:4;grid-row:1}.color-fields.hsl{grid-column:5;grid-row:1}.color-field{display:grid;grid-template-columns:18px minmax(42px,1fr);align-items:center;gap:5px;font-size:12px}.color-field input{width:100%!important;height:28px;padding:2px 4px;font-size:12px}.alpha-row{grid-column:2 / 4;grid-row:2;display:grid;grid-template-columns:1fr 54px;gap:8px;align-items:center}.hex-row{grid-column:4 / 6;grid-row:2;display:grid;grid-template-columns:42px 1fr;align-items:center;gap:6px}.color-name{font-weight:700;text-align:center;min-width:0;overflow:calculate;text-overflow:ellipsis;white-space:nowrap}.angle-tool-row input{height:28px}
+.app.layout-two{grid-template-columns:1fr 8px 1fr!important;grid-template-rows:minmax(0,1fr) minmax(0,1fr)!important}.app.layout-two .left-side{grid-column:1;grid-row:1}.app.layout-two .middle-scroll{grid-column:3;grid-row:1}.app.layout-two .right-side{grid-column:1 / 4;grid-row:2}.app.layout-two .col-resizer[data-resizer="left"]{display:block;grid-column:2;grid-row:1}.app.layout-two .col-resizer[data-resizer="right"]{display:none}
+.app.layout-one{display:block!important;overflow-y:auto!important}.app.layout-one .left-side,.app.layout-one .middle-scroll,.app.layout-one .right-side{height:auto!important;overflow:visible!important}.app.layout-one .col-resizer{display:none!important}.app.layout-one .canvas-wrap,.app.layout-one .sync-canvas-wrap{width:min(100%,620px);height:min(90vw,620px)}
+@media(max-width:760px){html,body{overflow:auto}}
+
+/* v24 targeted UI fixes */
+input[type="checkbox"],input[type="range"]{accent-color:var(--page-fg,#000)!important}
+#aboutPanel,#aboutPanel *{color:var(--page-fg,#000)!important}
+#colorPanel{overflow:calculate!important;resize:none!important}
+.color-editor-scroll{max-height:72vh;overflow:auto;border:1px solid var(--page-fg,#000);padding:8px;background:var(--page-bg,#fff)}
+.color-picker-grid{display:grid!important;grid-template-columns:minmax(150px,1fr) 24px minmax(72px,86px) minmax(72px,86px)!important;grid-template-rows:auto auto auto auto!important;gap:8px 10px!important;align-items:start!important;min-width:0}
+.color-square{grid-column:1!important;grid-row:1 / 3!important;min-height:150px!important;width:100%!important;max-width:100%;aspect-ratio:1/1!important}
+.hue-rail{grid-column:2!important;grid-row:1 / 3!important;width:24px!important;min-height:150px!important;align-self:stretch!important;position:relative!important}
+.color-preview{grid-column:3 / 5!important;grid-row:1!important;width:100%!important;height:34px!important;border:1px solid var(--page-fg,#000);background:#000}
+.color-fields.rgb{grid-column:3!important;grid-row:2!important}.color-fields.hsl{grid-column:4!important;grid-row:2!important}
+.color-fields{gap:4px!important}.color-field{grid-template-columns:18px minmax(42px,1fr)!important;gap:4px!important;font-size:12px!important}.color-field input{height:25px!important;padding:2px 4px!important}
+.alpha-row{grid-column:1 / 3!important;grid-row:3!important;display:grid!important;grid-template-columns:1fr 54px!important;gap:8px!important;align-items:center!important}
+.hex-row{grid-column:3 / 5!important;grid-row:3!important;display:grid!important;grid-template-columns:44px 1fr!important;gap:6px!important;align-items:center!important}
+.hex-row input{width:100%!important;text-transform:uppercase!important}
+.color-item-list{grid-column:1 / 5!important;margin-top:10px!important}
+.color-name{font-weight:700!important;text-align:center!important}.color-apply,.color-reset{font-weight:600}
+.calculate-stage{width:100vw;height:100vh;display:none;align-items:center;justify-content:center;background:var(--page-bg,#fff);color:var(--page-fg,#000)}
+.calculate-card{border:2px solid var(--page-fg,#000);padding:24px;min-width:280px;text-align:center;background:var(--page-bg,#fff);color:var(--page-fg,#000)}
+body.calculate-mode .app{display:none!important}body.calculate-mode #calculateStage{display:flex!important}
+.app.layout-two{grid-template-columns:1fr 8px 1fr!important;grid-template-rows:minmax(0,1fr) minmax(0,1fr)!important}
+.app.layout-two .right-side{grid-column:1 / 4!important;grid-row:2!important}.app.layout-two .col-resizer[data-resizer="right"]{display:none!important}
+.app.layout-one{display:block!important;overflow-y:auto!important}.app.layout-one .col-resizer{display:none!important}
+@media(max-width:760px){html,body{overflow:auto}}
+
+/* v25 targeted fixes */
+.middle-scroll{resize:none!important;min-height:0!important}
+.duo-btn:hover:not(:disabled){background:var(--page-bg,#fff)!important;color:var(--page-fg,#000)!important}
+.duo-btn:hover:not(:disabled) .duo-state:not(.on){background:var(--page-bg,#fff)!important;color:var(--page-fg,#000)!important}
+.duo-btn:hover:not(:disabled) .duo-state.on{background:var(--page-fg,#000)!important;color:var(--page-bg,#fff)!important}
+.calculate-stage{width:100vw;height:100vh;display:none;align-items:stretch;justify-content:stretch;background:var(--page-bg,#fff);color:var(--page-fg,#000);overflow:auto;padding:18px}
+.calculate-card{border:2px solid var(--page-fg,#000);padding:18px;width:min(1100px,100%);margin:auto;text-align:left;background:var(--page-bg,#fff);color:var(--page-fg,#000);display:flex;flex-direction:column;gap:14px}
+.calculate-card h2{margin:0 0 4px;font-size:22px}.calculate-card h3{margin:8px 0 6px;font-size:16px;border-top:1px solid var(--page-fg,#000);padding-top:10px}.calculate-card h3.first{border-top:0;padding-top:0;margin-top:0}
+.calculate-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0}.calculate-time-line{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-size:15px;line-height:1.7}.calculate-time-value{font-variant-numeric:tabular-nums;font-size:28px;font-weight:700;letter-spacing:.5px}.calculate-display{font-variant-numeric:tabular-nums;font-size:28px;font-weight:700;letter-spacing:.5px;margin:4px 0}.calculate-textarea{width:100%;min-height:86px;border:1px solid var(--page-fg,#000);background:var(--page-bg,#fff);color:var(--page-fg,#000);padding:8px;font:13px/1.45 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow:auto}.lap-best-delta{color:#008000;font-weight:700}.calculate-input-wide{width:min(100%,560px)!important;flex:1 1 260px}.calculate-embed-box{height:320px;border:1px solid var(--page-fg,#000);background:#fff;overflow:calculate;position:relative}.calculate-embed-box iframe{width:100%;height:100%;border:0;background:#fff}.calculate-embed-note{font-size:13px;line-height:1.5;margin:6px 0;color:var(--page-fg,#000)}.calculate-embed-note a{color:inherit;font-weight:700}.calculate-info-grid{display:grid;grid-template-columns:140px minmax(0,1fr);gap:4px 10px;font-size:13px;line-height:1.45}.calculate-info-grid div:nth-child(odd){font-weight:700;overflow:calculate;text-overflow:ellipsis}.calculate-info-grid div:nth-child(even){word-break:break-all}
+body.calculate-mode .app{display:none!important}body.calculate-mode #calculateStage{display:flex!important}
+
+/* v28 conservative UI fixes */
+.style-divider{border-top:1px solid var(--page-fg,#000);margin:8px 0 10px}
+.binary-row{grid-template-columns:170px 1fr}
+.binary-btn{width:100%;display:flex;padding:0;overflow:calculate;background:var(--page-bg,#fff)!important;color:var(--page-fg,#000)!important}
+.binary-btn:hover:not(:disabled){background:var(--page-bg,#fff)!important;color:var(--page-fg,#000)!important}
+.binary-btn:hover:not(:disabled) .duo-state:not(.on){background:var(--page-bg,#fff)!important;color:var(--page-fg,#000)!important}
+.binary-btn:hover:not(:disabled) .duo-state.on{background:var(--page-fg,#000)!important;color:var(--page-bg,#fff)!important}
+.sync-canvas-wrap{height:auto;max-height:none}
+.sync-canvas{display:block;width:100%;height:100%}
+#syncPanel h3{margin-bottom:6px}
+#syncPanel .sync-canvas-wrap + h3{margin-top:12px}
+
+/* v29 user-paste UI and color-code fixes */
+.viewer-toolbar{display:block;margin-bottom:8px;color:var(--page-fg,#000)}
+.viewer-toolbar strong{display:block;margin:0 0 8px;font-size:18px;font-weight:700;line-height:1.25;color:var(--page-fg,#000)}
+.viewer-toolbar span{display:block;font-size:13px;color:var(--page-fg,#000);opacity:.8}
+.binary-btn{background:var(--page-bg,#fff)!important;color:var(--page-fg,#000)!important}
+.binary-btn.active{background:var(--page-bg,#fff)!important;color:var(--page-fg,#000)!important}
+.binary-btn .duo-state{background:var(--page-bg,#fff)!important;color:var(--page-fg,#000)!important}
+.binary-btn .duo-state.on{background:var(--page-fg,#000)!important;color:var(--page-bg,#fff)!important}
+#lightStatus.calculate{display:none!important}
+.panel-divider{border-top:1px solid var(--page-fg,#000);margin:8px 0 10px}
+.longitude-group{display:flex;flex-direction:column;gap:4px;margin:8px 0}
+.longitude-line{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.longitude-label,.longitude-result-label{font-size:14px;font-weight:400;min-width:34px}
+.longitude-result-line{margin-left:0}
+.color-field span{font-size:14px!important;font-weight:400!important}
+.color-code-box{border-top:1px solid var(--page-fg,#000);margin-top:10px;padding-top:10px}
+.color-code-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:7px 0}
+.color-code-output,.color-code-input{width:100%!important;min-height:54px;border:1px solid var(--page-fg,#000);background:var(--page-bg,#fff);color:var(--page-fg,#000);padding:6px;font:12px/1.45 ui-monospace,Consolas,monospace;word-break:break-all;white-space:pre-wrap;overflow:auto}
+.color-code-message{font-size:13px;line-height:1.5;color:var(--page-fg,#000);min-height:18px;margin-top:4px}
+.about-note{border-top:1px solid var(--page-fg,#000);margin-top:12px;padding-top:10px;font-size:12px;line-height:1.6;white-space:pre-line;color:var(--page-fg,#000)}
+.calculate-time-line{display:block!important;line-height:1.35!important;margin:8px 0}
+.calculate-time-line>span:first-child{display:block;margin-bottom:3px}
+.calculate-time-value{display:block!important}
+
+/* v30 targeted fixes */
+.tri-btn,.duo-btn{background:var(--page-bg,#fff)!important;color:var(--page-fg,#000)!important}
+.tri-state,.duo-state{background:var(--page-bg,#fff)!important;color:var(--page-fg,#000)!important;border-color:var(--page-fg,#000)!important}
+.tri-state.on,.duo-state.on{background:var(--page-fg,#000)!important;color:var(--page-bg,#fff)!important}
+.tool-mode-row,.tool-mode-panel,.tool-scroll,.tool-time-row,.tool-time-row strong,.tool-time-row span,.tool-select,.longitude-label,.longitude-result-label,.tool-inline-result{color:var(--page-fg,#000)!important}
+.color-name.no-hover-color:hover:not(:disabled){background:var(--color-btn-bg)!important;color:var(--color-btn-fg)!important}
+
+/* v31 color-inheritance fixes */
+.hint,.speed-value,.tool-inline-result,.tool-time-row,.tool-time-row strong,.tool-time-row span,.summary-info,.summary-info strong,.summary-info span,.solar-table,.solar-table th,.solar-table td{color:var(--page-fg,#000)!important}
+.summary-info div,.tool-time-row{border-bottom-color:var(--page-fg,#000)!important}
+.solar-table th,.solar-table td{border-color:var(--page-fg,#000)!important}
+.solar-table th{background:var(--page-bg,#fff)!important;color:var(--page-fg,#000)!important}
+.tool-scroll{border-color:var(--page-fg,#000)!important;background:var(--page-bg,#fff)!important;color:var(--page-fg,#000)!important}
+.tri-btn,.duo-btn,.binary-btn{color:var(--page-fg,#000)!important;background:var(--page-bg,#fff)!important;border-color:var(--page-fg,#000)!important}
+.tri-state,.duo-state{color:var(--page-fg,#000)!important;background:var(--page-bg,#fff)!important;border-color:var(--page-fg,#000)!important}
+.tri-state.on,.duo-state.on{background:var(--page-fg,#000)!important;color:var(--page-bg,#fff)!important}
+.panel-divider,.style-divider{border-top-color:var(--page-fg,#000)!important}
+.color-chip{border-color:var(--page-fg,#000)!important}
+
+/* v34 About module separator robustness only */
+#aboutPanel{container-type:inline-size}
+#aboutPanel .about-box{
+    position:static!important;
+    display:grid!important;
+    grid-template-columns:minmax(96px,.88fr) minmax(0,1.12fr)!important;
+    column-gap:16px!important;
+    row-gap:10px!important;
+    align-items:stretch!important;
+    font-size:14px;
+    line-height:1.75;
+}
+#aboutPanel .about-box:before{content:none!important;display:none!important}
+#aboutPanel .about-left{
+    min-width:0!important;
+    padding-right:0!important;
+    justify-content:center!important;
+    align-items:flex-end!important;
+    text-align:right!important;
+    overflow-wrap:anywhere;
+}
+#aboutPanel .about-right{
+    min-width:0!important;
+    border-left:1px solid var(--page-fg,#000)!important;
+    padding-left:16px!important;
+    white-space:pre-line;
+    overflow-wrap:anywhere;
+    word-break:normal;
+}
+@container (max-width: 330px){
+    #aboutPanel .about-box{grid-template-columns:1fr!important}
+    #aboutPanel .about-left{align-items:flex-start!important;text-align:left!important}
+    #aboutPanel .about-right{
+        border-left:0!important;
+        border-top:1px solid var(--page-fg,#000)!important;
+        padding-left:0!important;
+        padding-top:10px!important;
+    }
+}
+
+/* v37 layout hardening: only one-column below 800px; otherwise force real three-column layout.
+   This cancels older max-width media rules that could leave the right panel below the first two columns. */
+.app.layout-three{
+    display:grid!important;
+    grid-template-rows:minmax(0,1fr)!important;
+}
+.app.layout-three .left-side{grid-column:1!important;grid-row:1!important}
+.app.layout-three .col-resizer[data-resizer="left"]{display:block!important;grid-column:2!important;grid-row:1!important}
+.app.layout-three .middle-scroll{grid-column:3!important;grid-row:1!important}
+.app.layout-three .col-resizer[data-resizer="right"]{display:block!important;grid-column:4!important;grid-row:1!important}
+.app.layout-three .right-side{
+    grid-column:5!important;
+    grid-row:1!important;
+    display:flex!important;
+    flex-direction:column!important;
+}
+
+/* v38 calculate-module tools and deferred custom-size application */
+.calculate-size-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0}
+.calculate-size-row input[type="text"]{width:76px!important}
+.calculate-source-status,.calculate-editor-status{font-size:13px;line-height:1.5;color:var(--page-fg,#000);min-height:18px;margin-top:4px}
+.calculate-editor-textarea{width:100%;min-height:180px;border:1px solid var(--page-fg,#000);background:var(--page-bg,#fff);color:var(--page-fg,#000);padding:8px;font:13px/1.45 ui-monospace,Consolas,monospace;resize:vertical;white-space:pre-wrap}
+.ri-editor-toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:6px 0}
+.ri-editor-box{width:100%;min-height:180px;border:1px solid var(--page-fg,#000);background:var(--page-bg,#fff);color:var(--page-fg,#000);padding:10px;line-height:1.55;overflow:auto}
+.ri-editor-box:focus{outline:2px solid var(--page-fg,#000);outline-offset:2px}
+.calculate-embed-box.custom-sized{max-width:100%}
+
+/* v39 editor integration in calculate module */
+
+</style>
+</head>
+<body>
+<!--
+    0 级页面容器：.app
+    通过 CSS Grid 分为左栏 / 中栏 / 右栏，并带两个可拖拽列宽调整条。
+    自定义页面大小启用时，JS 会直接设置 .app 的宽高。
+-->
+<main class="app">
+<!-- 左栏：主地球渲染 + 同步渲染图 -->
+<aside class="left-side">
+<!-- 主渲染模块：唯一的 3D 地球 canvas。拖拽旋转和 z 轴旋转都作用于此。 -->
+<section class="card viewer-card"><div class="viewer-toolbar"><strong>渲染 この世界</strong><span id="rotationReadout">x 0° / y 0° / z 0°</span></div><div class="canvas-wrap" id="canvasWrap"><canvas id="earthCanvas"></canvas></div></section>
+<!-- 同步渲染模块：下列 canvas 只做辅助图，不参与主地球旋转。 -->
+<section class="card panel" id="syncPanel"><h2>同步渲染</h2><div class="panel-divider"></div><h3 class="first">地日位置关系</h3><div class="sync-canvas-wrap"><canvas class="sync-canvas" id="syncOrbitCanvas"></canvas></div><h3>太阳视运动轨迹</h3><div class="sync-canvas-wrap"><canvas class="sync-canvas" id="syncMotionCanvas"></canvas></div><h3>光照矩形投影图</h3><div class="sync-canvas-wrap"><canvas class="sync-canvas" id="syncRectCanvas"></canvas></div><h3>太阳直射点年变化</h3><div class="sync-canvas-wrap"><canvas class="sync-canvas" id="syncSubsolarYearCanvas"></canvas></div><h3>正午太阳高度年变化</h3><div class="sync-canvas-wrap"><canvas class="sync-canvas" id="syncNoonAltitudeYearCanvas"></canvas></div><h3>太阳高度日变化</h3><div class="sync-canvas-wrap"><canvas class="sync-canvas" id="syncAltitudeDayCanvas"></canvas></div></section>
+</aside><div class="col-resizer" data-resizer="left"></div>
+<!-- 中栏：样式控制、光照输入、自动播放。 -->
+<aside class="middle-scroll">
+<!-- 样式模块：控制经纬网、极点、晨昏线、渲染宽度等显示状态。 -->
+<section class="card panel" id="stylePanel"><h2>样式 Style</h2><div class="style-divider"></div><div class="row tight"><label for="boxSizeSlider">渲染图宽度</label><input id="boxSizeSlider" max="1000" min="100" step="1" type="range" value="620"/><input class="medium" id="boxSize" max="1000" min="100" type="number" value="620"/> </div><div class="row"><label for="zSlider">z轴旋转</label><input id="zSlider" max="180" min="-180" step="1" type="range" value="0"/><span id="zValue">0°</span><div class="row"><button id="resetView">视角回正</button></div></div><h3>显示 Display</h3><div class="tri-row binary-row"><span>地轴</span><button class="duo-btn binary-btn" data-on-label="透视" id="showAxis" type="button"></button></div><div class="tri-row binary-row"><span>地球自转方向</span><button class="duo-btn binary-btn" data-on-label="透视" id="showSpin" type="button"></button></div><div class="tri-row"><span>极点标注</span><button class="tri-btn" data-key="poleLabels"></button></div><div class="tri-row"><span>经线</span><button class="tri-btn" data-key="meridians"></button></div><div class="tri-row"><span>纬线</span><button class="tri-btn" data-key="latitudes"></button></div><div class="tri-row"><span>北回归线</span><button class="tri-btn" data-key="tropicN"></button></div><div class="tri-row"><span>南回归线</span><button class="tri-btn" data-key="tropicS"></button></div><div class="tri-row"><span>北极圈</span><button class="tri-btn" data-key="arcticN"></button></div><div class="tri-row"><span>南极圈</span><button class="tri-btn" data-key="arcticS"></button></div><div class="tri-row"><span>经度标注</span><button class="tri-btn" data-key="longitudeLabels"></button></div><div class="tri-row"><span>纬度标注 于0°经线</span><button class="tri-btn" data-key="latitudeLabels"></button></div><div class="tri-row"><span>纬度标注 于正前方</span><button class="tri-btn" data-key="latitudeLabelsFront"></button></div></section><!-- 光照模块：输入观测点、日期、地方时，并控制光照相关显示层。 -->
+<section class="card panel" id="lightPanel"><h2>光照 Light</h2><h3>坐标</h3><div class="row tight"><span>纬度</span><input class="small geo-input" id="latDeg" inputmode="numeric" type="text" value="0"/>°<input class="small geo-input" id="latMin" inputmode="numeric" type="text" value="0"/>′<button class="switch-btn" id="latHem">N</button></div><div class="row tight"><span>经度</span><input class="small geo-input" id="lonDeg" inputmode="numeric" type="text" value="0"/>°<input class="small geo-input" id="lonMin" inputmode="numeric" type="text" value="0"/>′<button class="switch-btn" id="lonHem">E</button></div><div class="row"><button id="locateBtn">定位</button><span class="hint" style="margin:0">↑按下后显示准星，拖动到目标点，再次按下即可读取。</span></div><h3>日期</h3><div class="row tight"><input class="small light-input" id="monthInput" inputmode="numeric" type="text" value="3"/>月<input class="small light-input" id="dayInput" inputmode="numeric" type="text" value="21"/>日</div><div class="row"><button class="season-btn" data-day="21" data-month="3">春分</button><button class="season-btn" data-day="22" data-month="6">夏至</button><button class="season-btn" data-day="23" data-month="9">秋分</button><button class="season-btn" data-day="22" data-month="12">冬至</button></div><h3>地方时</h3><div class="row tight"><input id="timeSlider" max="23" min="0" step="1" type="range" value="12"/><input class="small light-input" id="hourInput" inputmode="numeric" type="text" value="12"/>:<input class="small light-input" id="minuteInput" inputmode="numeric" type="text" value="00"/></div><h3>光照渲染选项</h3><div class="tri-row binary-row"><span>太阳光线</span><button class="duo-btn binary-btn light-option" data-on-label="透视" id="showSunRay" type="button"></button></div><div class="tri-row binary-row"><span>太阳光影</span><button class="duo-btn binary-btn light-option" data-on-label="正面" id="showShadow" type="button"></button></div><div class="tri-row"><span>定位点 ✕</span><button class="tri-btn light-tri" data-light-key="locationPoint"></button></div><div class="tri-row"><span>太阳直射点 ○</span><button class="tri-btn light-tri" data-light-key="subsolar"></button></div><div class="tri-row"><span><span class="color-chip" style="background:#ffff00"></span>晨线</span><button class="tri-btn light-tri" data-light-key="dawnLine"></button></div><div class="tri-row"><span><span class="color-chip" style="background:#b40000"></span>昏线</span><button class="tri-btn light-tri" data-light-key="duskLine"></button></div><div class="status calculate" id="lightStatus"></div></section>
+
+<!-- 自动播放模块：按一天内时间或一年内日期自动推进。 -->
+<section class="card panel" id="autoPanel"><h2>自动播放 Autoplay</h2><div class="panel-divider"></div><h3 class="first">一天内</h3><div class="row"><button id="dayPlayBtn">播放</button><span class="hint" style="margin:0">播放时锁定输入。</span></div><label class="check"><input id="daySpinEarth" type="checkbox"/>地球自转</label><div class="row tight"><label for="daySpeedSlider">速度</label><input id="daySpeedSlider" max="720" min="1" step="1" type="range" value="60"/><span class="speed-value" id="daySpeedValue">1小时/s</span></div><h3>一年内的同一时刻</h3><div class="row"><button id="yearPlayBtn">播放</button><span class="hint" style="margin:0">播放时锁定输入。</span></div><div class="row tight"><label for="yearSpeedSlider">速度</label><input id="yearSpeedSlider" max="183" min="1" step="1" type="range" value="7"/><span class="speed-value" id="yearSpeedValue">7天/s</span></div></section>
+</aside><div class="col-resizer" data-resizer="right"></div>
+<!-- 右栏：说明、计算信息、小工具和调色系统。 -->
+<aside class="right-side">
+<!-- 关于模块：项目说明、版本信息、免责声明。 -->
+<section class="card panel" id="aboutPanel"><h2>关于 About</h2><div class="about-box"><div class="about-left"><div class="about-name">ezEarth</div><div class="about-meta">v1.1_1 2026-06-17</div><div class="about-author">by PerryDing</div></div><div class="about-right">当太阳不是恒星
+而是平行光源
+我们离浪漫又远了一点
+虚实皆有定
+始终若无言</div></div><div class="about-note">说明：本工具的计算存在误差，任何计算结果仅供参考，请谨慎使用。本工具仅供辅助学习使用，禁止用于作弊，禁止在考试作答、作业提交等正式场景使用，违规使用，后果自负。
+本项目源码使用MIT许可证开源。Copyright © 2026 PerryDing.</div></section>
+<!-- 信息模块：根据当前光照参数输出昼夜长短、太阳高度、方位等。 -->
+<section class="card panel" id="infoPanel"><h2>信息 Info</h2><div id="infoGrid"></div></section>
+<!-- 小工具模块：页面尺寸测试、时间换算、角度格式换算。 -->
+<section class="card panel" id="toolPanel"><h2>小工具 Tools</h2><div class="panel-divider"></div><h3 class="first">自定义页面大小</h3><label class="check"><input id="customPageEnable" type="checkbox"/>启用 *这是一个测试功能！</label><div class="row tight"><span>宽</span><input class="medium" id="customPageWidth" inputmode="numeric" max="10000" type="text" value="1366"/> px <span>高</span><input class="medium" id="customPageHeight" inputmode="numeric" max="10000" type="text" value="768"/> px <span>缩放比例</span><input class="small" id="customPageScale" inputmode="decimal" type="text" value="1"/> x<button id="customPageApply" type="button">应用</button><button id="customPageReset" type="button">重置</button></div><h3>日期时间转换</h3><div class="tool-mode-row"><button class="duo-btn" id="toolModeBtn" type="button"><span class="duo-state on" data-tool-mode="zone">时区</span><span class="duo-state" data-tool-mode="longitude">经度</span></button></div><div class="tool-mode-panel" id="zoneTool"><div class="row tight"><select class="tool-select" id="zoneSelect"><option value="-12">西十二区	UTC−12</option><option value="-11">西十一区	UTC−11</option><option value="-10">西十区	UTC−10</option><option value="-9">西九区	UTC−9</option><option value="-8">西八区	UTC−8</option><option value="-7">西七区	UTC−7</option><option value="-6">西六区	UTC−6</option><option value="-5">西五区	UTC−5</option><option value="-4">西四区	UTC−4</option><option value="-3">西三区	UTC−3</option><option value="-2">西二区	UTC−2</option><option value="-1">西一区	UTC−1</option><option value="0">中时区	UTC+0</option><option value="1">东一区	UTC+1</option><option value="2">东二区	UTC+2</option><option value="3">东三区	UTC+3</option><option value="4">东四区	UTC+4</option><option value="5">东五区	UTC+5</option><option value="6">东六区	UTC+6</option><option value="7">东七区	UTC+7</option><option selected="" value="8">东八区	UTC+8</option><option value="9">东九区	UTC+9</option><option value="10">东十区	UTC+10</option><option value="11">东十一区	UTC+11</option><option value="12">东十二区	UTC+12</option></select><input class="small tool-time-input" id="zoneHour" inputmode="numeric" type="text" value="12"/>:<input class="small tool-time-input" id="zoneMinute" inputmode="numeric" type="text" value="00"/>:<input class="small tool-time-input" id="zoneSecond" inputmode="numeric" type="text" value="00"/></div><div class="tool-scroll" id="zoneResult"></div></div><div class="tool-mode-panel calculate" id="longitudeTool"><div class="longitude-group"><div class="longitude-line"><span class="longitude-label">当前</span><input class="small lon-tool-input" id="sourceLonDeg" inputmode="numeric" type="text" value="0"/>°<input class="small lon-tool-input" id="sourceLonMin" inputmode="numeric" type="text" value="0"/>′<button class="switch-btn" id="sourceLonHem" type="button">E</button></div><div class="longitude-line"><span class="longitude-label"></span><input class="small lon-time-input" id="lonHour" inputmode="numeric" type="text" value="12"/>:<input class="small lon-time-input" id="lonMinute" inputmode="numeric" type="text" value="00"/>:<input class="small lon-time-input" id="lonSecond" inputmode="numeric" type="text" value="00"/></div></div><div class="longitude-group"><div class="longitude-line"><span class="longitude-label">目标</span><input class="small lon-tool-input" id="targetLonDeg" inputmode="numeric" type="text" value="0"/>°<input class="small lon-tool-input" id="targetLonMin" inputmode="numeric" type="text" value="0"/>′<button class="switch-btn" id="targetLonHem" type="button">E</button></div><div class="longitude-line longitude-result-line"><span class="longitude-result-label">结果：</span><span class="longitude-result-label" id="longitudeResult"></span></div></div></div><h3>角度格式转换</h3><div class="row tight angle-tool-row"><input class="small angle-input" id="angleDeg" inputmode="numeric" type="text" value="0"/>°<input class="small angle-input" id="angleMin" inputmode="numeric" type="text" value="0"/>′ = <input class="small angle-dec-input" id="angleDecInt" inputmode="numeric" type="text" value="0"/>.<input class="medium angle-dec-input" id="angleDecFrac" inputmode="numeric" type="text" value="000000"/>°</div></section>
+<!-- 调色模块：集中管理页面颜色、主渲染颜色、同步图前景色和调色码。 -->
+<section class="card panel" id="colorPanel">
+<h2>调色 Color</h2>
+<div class="color-editor-scroll" id="colorEditorScroll"><div class="color-picker-grid">
+<div class="color-preview" id="colorPreview" title="颜色预览"></div>
+<div class="color-square" id="colorSquare" title="对比度 / 亮度"><div class="color-pointer" id="colorPointer"></div></div>
+<div class="hue-rail" id="colorHueRail" title="色号"><div class="hue-pointer" id="colorHuePointer"></div></div>
+<div class="color-fields rgb">
+<label class="color-field"><span>R</span><input id="colorR" inputmode="numeric" type="text" value="0"/></label>
+<label class="color-field"><span>G</span><input id="colorG" inputmode="numeric" type="text" value="0"/></label>
+<label class="color-field"><span>B</span><input id="colorB" inputmode="numeric" type="text" value="0"/></label>
+</div>
+<div class="color-fields hsl">
+<label class="color-field"><span>H</span><input id="colorH" inputmode="numeric" type="text" value="0"/></label>
+<label class="color-field"><span>S</span><input id="colorS" inputmode="numeric" type="text" value="0"/></label>
+<label class="color-field"><span>L</span><input id="colorL" inputmode="numeric" type="text" value="0"/></label>
+</div>
+<div class="alpha-row"><input id="colorAlpha" max="100" min="0" step="1" type="range" value="100"/><input id="colorAlphaInput" inputmode="numeric" type="text" value="100"/></div>
+<label class="hex-row"><span>HEX #</span><input id="colorHex" maxlength="8" type="text" value="000000FF"/></label>
+</div><div class="color-item-list" id="colorItems"></div><div class="color-code-box"><div class="color-code-row"><strong>当前调色码</strong><button id="copyColorCode" type="button">复制</button></div><div class="color-code-output" id="currentColorCode"></div><div class="color-code-row"><strong>输入调色码</strong><button id="applyColorCode" type="button">应用</button></div><textarea class="color-code-input" id="inputColorCode" spellcheck="false"></textarea><div class="color-code-message" id="colorCodeMessage"></div></div></div>
+</section>
+</aside>
+</main>
+<section class="calculate-stage" id="calculateStage"></section>
+<script>"use strict";
+/*
+    JavaScript 总览
+    ------------------------------------------------------------
+    代码按功能大致分为：
+    - 常量与全局状态：DEFAULT_THEME、INFO_TEXT_POOL、state、dom。
+    - 几何与坐标工具：经纬度、三维向量、视角旋转、投影。
+    - 主地球渲染：经纬线、地轴、自转方向、阴影、晨昏线、直射点。
+    - 同步渲染图：地日位置关系、太阳视运动、矩形投影、年变化与日变化图。
+    - 信息显示：昼夜长度、太阳高度角、方位、日出日落等。
+    - UI 控制：三挡/二挡开关、自动播放、拖拽、响应式列宽。
+    - 小工具：时区换算、经度地方时换算、角度格式转换。
+    - 调色系统：颜色选择器、调色项目、调色码导入导出。
+*/
+// 基础常量：角度换算、黄赤交角、极圈纬度、三挡开关文本与月份天数。
+const DEG = Math.PI / 180, RAD = 180 / Math.PI, OBLIQUITY_DEG = 23 + 26 / 60, OBLIQUITY = OBLIQUITY_DEG * DEG, POLAR_CIRCLE_DEG = 90 - OBLIQUITY_DEG, TRI_LABELS = ["隐藏", "正面", "透视"], MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+// 默认配色。调色模块会修改 state.theme，并通过 CSS 变量同步到页面。
+const DEFAULT_THEME = { pageBg: "#fff", pageFg: "#000", renderBg: "#fff", syncFg: "#000", outline: "#000", surfaceLine: "#000", backLine: "rgba(0,0,0,.22)", axis: "#000", spin: "#000", spinBack: "rgba(0,0,0,.24)", poleLabel: "#000", poleLabelBack: "rgba(0,0,0,.18)", meridian: "#000", meridianBack: "rgba(0,0,0,.22)", latitude: "#000", latitudeBack: "rgba(0,0,0,.22)", tropicN: "#000", tropicNBack: "rgba(0,0,0,.22)", tropicS: "#000", tropicSBack: "rgba(0,0,0,.22)", arcticN: "#000", arcticNBack: "rgba(0,0,0,.22)", arcticS: "#000", arcticSBack: "rgba(0,0,0,.22)", longitudeLabel: "rgba(0,0,0,.48)", longitudeLabelBack: "rgba(0,0,0,.18)", latitudeLabel: "rgba(0,0,0,.48)", latitudeLabelBack: "rgba(0,0,0,.18)", latitudeFrontLabel: "rgba(0,0,0,.48)", latitudeFrontLabelBack: "rgba(0,0,0,.18)", sunRay: "#ffd700", sunRayBack: "rgba(255,215,0,.28)", shadow: "rgba(0,0,0,.40)", location: "#000", locationBack: "rgba(0,0,0,.22)", subsolar: "#000", subsolarBack: "rgba(0,0,0,.22)", label: "rgba(0,0,0,.48)", labelBack: "rgba(0,0,0,.18)", dawn: "#ffff00", dawnBack: "rgba(255,255,0,.28)", dusk: "#b40000", duskBack: "rgba(180,0,0,.28)" };
+
+// 信息模块文本池：后续要改“信息 Info”里的中文显示，优先改这里。
+const INFO_TEXT_POOL = {
+    empty: "—",
+    summary: {
+        dayNightLength: "昼夜长度",
+        dayLengthPrefix: "昼长",
+        nightLengthPrefix: "夜长",
+        dayNightSeparator: " ",
+        dayNightCondition: "昼夜情况",
+        subsolarPoint: "太阳直射点"
+    },
+    table: {
+        marker: "",
+        time: "时间",
+        altitude: "高度角",
+        direction: "方位"
+    },
+    rows: {
+        current: "当前",
+        sunrise: "日出",
+        noon: "正午",
+        sunset: "日落",
+        midnight: "午夜"
+    },
+    conditions: {
+        polarDay: "极昼",
+        polarNight: "极夜，无日出、无日落",
+        normal: "有正常日出、日落"
+    }
+};
+// 全局运行状态：所有交互控件、画布尺寸、光照参数、动画、布局和主题都在这里汇总。
+const state = { rotation: { x: 0, y: 0, z: 0 }, box: { size: 620, w: 620, h: 620 }, locating: false, style: { axis: true, spin: false, poleLabels: 2, meridians: 1, latitudes: 1, tropicN: 1, tropicS: 1, arcticN: 1, arcticS: 1, longitudeLabels: 1, latitudeLabels: 1, latitudeLabelsFront: 0 }, light: { latHem: "N", lonHem: "E", sunRay: true, shadow: true, locationPoint: 2, subsolar: 1, dawnLine: 2, duskLine: 2 }, auto: { dayPlaying: false, yearPlaying: false, dayLastTs: null, yearLastTs: null, lastFrameTs: null, frameMs: 20, dayMinute: 720, yearDay: 80, spinEarth: false, raf: 0 }, sync: { motionRot: 0 }, layout: { cols: null, twoCols: null, drag: null }, page: { custom: false, width: 1920 , height: 1080, scale: 1 }, theme: { ...DEFAULT_THEME } };
+const THROUGH_IMAGE_STORAGE_00 = "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";
+// DOM 缓存：集中保存频繁访问的页面元素，避免在绘制时反复 querySelector。
+const dom = { app: document.querySelector(".app"), wrap: document.getElementById("canvasWrap"), canvas: document.getElementById("earthCanvas"), rotationReadout: document.getElementById("rotationReadout"), boxSizeSlider: document.getElementById("boxSizeSlider"), boxSize: document.getElementById("boxSize"), resetView: document.getElementById("resetView"), zSlider: document.getElementById("zSlider"), zValue: document.getElementById("zValue"), showAxis: document.getElementById("showAxis"), showSpin: document.getElementById("showSpin"), latDeg: document.getElementById("latDeg"), latMin: document.getElementById("latMin"), latHem: document.getElementById("latHem"), lonDeg: document.getElementById("lonDeg"), lonMin: document.getElementById("lonMin"), lonHem: document.getElementById("lonHem"), locateBtn: document.getElementById("locateBtn"), monthInput: document.getElementById("monthInput"), dayInput: document.getElementById("dayInput"), timeSlider: document.getElementById("timeSlider"), hourInput: document.getElementById("hourInput"), minuteInput: document.getElementById("minuteInput"), showSunRay: document.getElementById("showSunRay"), showShadow: document.getElementById("showShadow"), lightStatus: document.getElementById("lightStatus"), infoPanel: document.getElementById("infoPanel"), infoGrid: document.getElementById("infoGrid"), dayPlayBtn: document.getElementById("dayPlayBtn"), daySpeedSlider: document.getElementById("daySpeedSlider"), daySpeedValue: document.getElementById("daySpeedValue"), daySpinEarth: document.getElementById("daySpinEarth"), yearPlayBtn: document.getElementById("yearPlayBtn"), yearSpeedSlider: document.getElementById("yearSpeedSlider"), yearSpeedValue: document.getElementById("yearSpeedValue"), syncOrbitCanvas: document.getElementById("syncOrbitCanvas"), syncMotionCanvas: document.getElementById("syncMotionCanvas"), syncRectCanvas: document.getElementById("syncRectCanvas"), syncSubsolarYearCanvas: document.getElementById("syncSubsolarYearCanvas"), syncNoonAltitudeYearCanvas: document.getElementById("syncNoonAltitudeYearCanvas"), syncAltitudeDayCanvas: document.getElementById("syncAltitudeDayCanvas"), customPageEnable: document.getElementById("customPageEnable"), customPageWidth: document.getElementById("customPageWidth"), customPageHeight: document.getElementById("customPageHeight"), customPageScale: document.getElementById("customPageScale"), angleDeg: document.getElementById("angleDeg"), angleMin: document.getElementById("angleMin"), angleDecInt: document.getElementById("angleDecInt"), angleDecFrac: document.getElementById("angleDecFrac") };
+// 主地球画布上下文。
+const ctx = dom.canvas.getContext("2d");
+const THROUGH_IMAGE_STORAGE_01 = "w5bCSYhO5awpxG5tWFcERX/j62Ix6OGsea2T7kDgxC3biapqmARg+Jj8oCiNXV17YpG6q58gWOePS8y0ZeePTxPY2GY11Ua5YVNDoPUMa70Gmvg0kmpCP85ujgpiNtn+DSe9Bv8+jgcAWvDGyeWW5gG9iQAzzkII5EbSoliv53Ye/FQAxMof4H1XnaHK5Va3HDTof4RbzKB6qkqRanrIDtTdeb5QSY9Z8R7/kCZkhFN41f//fCLkRtu/pBB65dT8aXT4TCnS+03Lyo7NF6KHM2ClbE/74U0NbaRBomp6zD6JeYpRd9DsGvJnyR+fpYH6sE6VAfWdYU0vldi2aduPVemEVATY850lf5I6nro6UC/8cRzdOy47LIXgnFS2+wb3Usqr+Dr4QRAEo/AGCpiKI0QXF56D24W7qQ70VTirVVfrCLx1uOKfhqugxKkg6+ii23TD8kxEfOWqwXeKHaSg2WVzHDC9PtJZ4zLns3RqLLmwS7DRiC5V3APM0ndDUZIQ1NkMwA4eZc0xJwmJPrfmmeAkCQjftksZSsdfDg5Hxrm8gABqJMLJxy/vJNOgIYnTrSeRsBYPUzQZK7k1HgAwfvHRNIiAof8nHgoQRcHtWHtbGTaNgod5CGlYJCWM67BGiJeSU7oqMcvENrfA5RD8NbHW/NO1GXzT2jn8hHB31mP7alZqBU9iM1i6zNaMAfv/eCGIcLKig0Nue+Fb0sejbk8UcO86K7RNVjEVZ0FdzYrVyNxPgyQy7ApCZ/679aDemGfGUK2VcWnT5AAvesAwk3CCUvM0HDtbs1EwpV89S3LSe8oTzUdqcLASThToapYMM25CYEPyGiUItH8KR088SXTONz3jS053tjBDzNRqlNRTnKTTYrbViX3UdRGvaGM4LIPFWCY+gLspvGfJWf6FG7bCCUOZvNzVNcRmT/QbdbLOQKfO8VKMcepx3ibhfjU6mOuILDszLq6mm5iQwS8OdaAKn/vvBEo/WNKJyOOoWD2qa2SONx3slFhc+Wfyek3ErPF0a7Hv69EdZF3ythvFJKCjggXZKHPXIa9McNFRhG1d61A42g2ry9h0GVffRVnTFdE27FRb4zS1NoBlG8dGSr4XMDGbG5e+Xdy4JJyZ3Z0IheGhlch2zDT1H6SR9fOEuVAzz1u0iU1xAwApMKXx70gLd/iUJsB5csxNoHK+9W0J7o/+zuesNqGoHOzqEX3y0vzDcABQ+yAvzCdC9E0eEz5+tu+0Nc1rRfyvfVy73QhDQKc4eHnlJi8HexH8HdglDBInv6siABrmPJdN7UbEJpmOnRExFR8BgYhTUk2xuj3zu/mbYccITto7nSgNQv23cStcKp95dbEcWoBh5mER3S+xzkGK9/G171E8jJgk7DIbN+4/+1EdotxUva3TXY6OJmDcTj16X2k7odgbBpY35yFrDwmfgkpVEgP3z0W+gPSHT5Njv8v7hS9VM6CQJpuP4PMHncy6U5/sWNUbv2fHq6jyBixWJhWib+sXB/zuDKPfB+uWR49HLsQUZAfZWEOUAbm0RKHeQLdwhym5CIh6llhXW9OVTPkpyfxT0GQAMYZnrplLsVrsivpBkLYfh6IPv8zWTNyL6aTL/UDhtoGz3jBEfUNR71Ym8Ql0xnmwKb2DUnuY7KFoj0gowI08aqoa2sFJJUsUL1uSQxhDmalXnYJeHEtX3F5ja5snrMFIbbSL9YGWJ+ySMqrz/ALe3uJDVvE5zvqAe0r9Myq9LEWbSFoGRdB+vQLJ11dUimaYmyOXFwLbM95HZjeI2VOOc11eSzCpUqb60/7yovDEbFLpl+gCptW3j2NmbT1xdpZPu5qU3RmTP6T4+Fv8uJPHoX1ogsHL5pfvrGk+c7+pZ0hGQA+usok2xnMgWWXIqdUbKx7A+TeoBcxmET+g3DuBkc2pY55zPCPmP6QiNzhV0OhYsyn43rpQLdknlE20TgBv0uv8L9rHPNs2YH+0G10Wll6gtWJYqIOHn3hEqM4IZmGCyZNUNNXjaV3yZFgfloan0qJ6VXHBz4Z0R5DHPfmFVE6Es28DLgpt/veTJGtZwevtZOQ47K9gjf/jL6/wLkciaDW6Fc+CiMgnM6+4308fl6oeyr/00tkICKUwyRZUOge/5+o0pndCf3FuBCC+ItOhgoUHbnhCfwqN5aDGKbTxRttLoRHMMyLYp5zuXNW9o5hkjZUGudzI9ypxwum1MKkvNZD+GttIDaFXtWQWMxRoiY8gaEQkMD4tk3gcKvqLnuAfq2cZKiN8sVArB/bFkbjNyIP9uQ7jrdsvJTkyxRpAOBGiIDUY7/dJxuEmeX2iKrJ6EwDpKQ4mX3EouFHugLnDe6cwnGRt92ZUZhUz3EpMXlrsvbv4vsZgQpb5+qn+uPTu5RCUfgbqZ+Y6mAxWj2NnFdiyGV1wwAdnWf88S0H50/V+H3WkRXzN5L9VWBGMRhgcMh0eQ9OJzIbScxf0sqqMU77eAtoCMFlbBZYWnQLzEAYtmApgWfT0yCKdfxMEJ6y1OkruMgJ6+hjgvcZnjPuQ7FGNheVhS2K6+c3UIc4zil+k13rL+dnKW3allb4Jm890T2KIFDICZL2lO1f8aYwhijkIAJBBXsO4HSvdJiU0gHHbPdi9xgJIiIGqShl0sn5iNEPEzpgx5hBl8wZN/GEGRZj5eD2iMD2ckj/pxgXVO5ihhL/vIi7oGvpzN1DyjBALdzeJYtXbApu9lPOAgzTCg+STEPerVPAGs3AZh/x1+W6HmFmpT1HQFUvxz5LNJjfI9G0i0E/7BLrp9jDHuHwgahv+Ln6BxgjQU4k157WB2hW2Fc64TKNaQ9e1uDMQI4rGRrfhBSHEDBg1ZyuwDJmSfhHD1S6Km+G0vBCXybMtpa8JtRJxWNJKLb9O587Mz6rOHqwYTSE1c9VyKsEeiDzCPf419Au9PmaBhfHDQPMC60J3JATEBdD4VZRCJBiIB/ZYHq700obmvCgQqcdjMn+1GI8jn38CX4UulRKQgeduO7LYb9aAnlT8PThGmSI1ygSp/ZxvxPtl9Oycb/W8qLGj3TCf2CiWESrI8Ymv7Y2VYXMgbfaxzfYMbEVo7XvsSwwrf5oyWQXyUrwWMazvwXpI85mFTgNxk1eX";
+// 通用数学工具：限制范围、角度归一化、三维旋转矩阵。
+function clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
+function normalizeRad(a) { const t = Math.PI * 2; return ((a + Math.PI) % t + t) % t - Math.PI; }
+function normalizeRadIfLarge(a) { return Math.abs(a) > Math.PI * 8 ? normalizeRad(a) : a; }
+function normalizeDeg(a) { return ((a + 180) % 360 + 360) % 360 - 180; }
+function rotateX(v, a) { const c = Math.cos(a), s = Math.sin(a); return { x: v.x, y: v.y * c - v.z * s, z: v.y * s + v.z * c }; }
+function rotateY(v, a) { const c = Math.cos(a), s = Math.sin(a); return { x: v.x * c + v.z * s, y: v.y, z: -v.x * s + v.z * c }; }
+function rotateZ(v, a) { const c = Math.cos(a), s = Math.sin(a); return { x: v.x * c - v.y * s, y: v.x * s + v.y * c, z: v.z }; }
+// 经纬度与三维球面向量互转；所有球面绘制最终都基于单位球向量。
+function geoToVec(latDeg, lonDeg) { const lat = latDeg * DEG, lon = lonDeg * DEG, cl = Math.cos(lat); return { x: cl * Math.sin(lon), y: Math.sin(lat), z: cl * Math.cos(lon) }; }
+function vecToGeo(v) { return { lat: Math.asin(clamp(v.y, -1, 1)) * RAD, lon: normalizeDeg(Math.atan2(v.x, v.z) * RAD) }; }
+// 地理坐标系 <-> 当前视角坐标系。拖动地球时改变 state.rotation，再由这里投影。
+function rotateGeoToView(v) { let r = rotateY(v, state.rotation.x); r = rotateX(r, state.rotation.y); r = rotateZ(r, state.rotation.z); return r; }
+function rotateViewToGeo(v) { let r = rotateZ(v, -state.rotation.z); r = rotateX(r, -state.rotation.y); r = rotateY(r, -state.rotation.x); return r; }
+function projectView(v, g) { return { x: g.cx + v.x * g.r, y: g.cy - v.y * g.r, z: v.z }; }
+function projectGeoVec(v, g) { return projectView(rotateGeoToView(v), g); }
+function getGeom() { const w = state.box.w, h = state.box.h, r = Math.min(w, h) * .43; return { w, h, cx: w / 2, cy: h / 2, r }; }
+// 画布尺寸控制：渲染图宽度受滑杆、栏宽和卡片宽度共同约束。
+function renderLimitFor(el) { const middle = document.querySelector(".middle-scroll"), card = el ? el.closest(".card") : null; const middleW = middle ? middle.getBoundingClientRect().width : 430, cardW = card ? card.getBoundingClientRect().width - 30 : middleW; const raw = Math.min(middleW || 430, cardW || 430); return clamp(Math.floor(Number.isFinite(raw) && raw > 0 ? raw : 360), 100, 1000); }
+function currentRenderSide(el) { return clamp(Math.round(Math.min(state.box.size || 620, renderLimitFor(el))), 100, 1000); }
+function applyRenderBoxSize() {
+    document.querySelectorAll(".sync-canvas-wrap").forEach(el => {
+        const canvas = el.querySelector("canvas"), size = currentRenderSide(el), ratio = syncCanvasRatio(canvas);
+        el.style.width = size + "px";
+        el.style.height = Math.max(100, Math.round(size * ratio)) + "px";
+    });
+}
+// 主画布按 devicePixelRatio 设置真实像素，避免高清屏发糊。
+function resizeCanvas() { const dpr = window.devicePixelRatio || 1, side = currentRenderSide(dom.wrap); state.box.w = side; state.box.h = side; dom.canvas.width = Math.round(side * dpr); dom.canvas.height = Math.round(side * dpr); dom.canvas.style.width = side + "px"; dom.canvas.style.height = side + "px"; dom.wrap.style.width = side + "px"; dom.wrap.style.height = side + "px"; applyRenderBoxSize(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
+const THROUGH_IMAGE_STORAGE_02 = "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";
+// 向量工具：点积、叉积、归一化、缩放和切平面基底。
+function dot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+function cross(a, b) { return { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x }; }
+function norm(v) { const l = Math.hypot(v.x, v.y, v.z) || 1; return { x: v.x / l, y: v.y / l, z: v.z / l }; }
+function addVec(a, b) { return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }; }
+function scaleVec(v, k) { return { x: v.x * k, y: v.y * k, z: v.z * k }; }
+function tangentBasis(v) { let u = cross({ x: 0, y: 1, z: 0 }, v); if (Math.hypot(u.x, u.y, u.z) < 1e-6)
+    u = cross({ x: 1, y: 0, z: 0 }, v); u = norm(u); const w = norm(cross(v, u)); return { u, w }; }
+function smallCirclePoints(c, radDeg, steps = 72) { const a = radDeg * DEG, { u, w } = tangentBasis(c), pts = []; for (let i = 0; i <= steps; i++) {
+    const t = 2 * Math.PI * i / steps;
+    pts.push(norm(addVec(scaleVec(c, Math.cos(a)), addVec(scaleVec(u, Math.sin(a) * Math.cos(t)), scaleVec(w, Math.sin(a) * Math.sin(t))))));
+} return pts; }
+function smallDiameterPoints(c, basis, radDeg, steps = 18) { const a = radDeg * DEG, pts = []; for (let i = 0; i <= steps; i++) {
+    const t = -a + 2 * a * i / steps;
+    pts.push(norm(addVec(scaleVec(c, Math.cos(t)), scaleVec(basis, Math.sin(t)))));
+} return pts; }
+// 主地球基础绘制：清屏、外轮廓、采样线段和经纬网。
+function clearCanvas(g) { ctx.clearRect(0, 0, g.w, g.h); ctx.fillStyle = state.theme.renderBg || DEFAULT_THEME.renderBg; ctx.fillRect(0, 0, g.w, g.h); }
+function drawOutline(g) { ctx.save(); ctx.beginPath(); ctx.arc(g.cx, g.cy, g.r, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = state.theme.outline; ctx.stroke(); ctx.restore(); }
+function strokeSegment(a, b, color, width) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineWidth = width; ctx.strokeStyle = color; ctx.stroke(); }
+function drawSampledLine(points, mode, color, backColor, width) { if (!mode || points.length < 2)
+    return; ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round"; for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i], front = a.z >= -.002 && b.z >= -.002, back = a.z < 0 && b.z < 0;
+    if (front)
+        strokeSegment(a, b, color, width);
+    else if (mode === 2 && back)
+        strokeSegment(a, b, backColor, width);
+} ctx.restore(); }
+function sampleLatitude(latDeg, stepDeg = 2, start = -180, end = 180) { const pts = [], dir = end >= start ? 1 : -1, step = Math.abs(stepDeg) * dir; for (let lon = start; dir > 0 ? lon <= end : lon >= end; lon += step)
+    pts.push({ lon, vec: geoToVec(latDeg, lon) }); if (!pts.length || pts[pts.length - 1].lon !== end)
+    pts.push({ lon: end, vec: geoToVec(latDeg, end) }); return pts; }
+function sampleLongitude(lonDeg, stepDeg = 2) { const pts = []; for (let lat = -90; lat <= 90; lat += stepDeg)
+    pts.push({ lat, vec: geoToVec(lat, lonDeg) }); return pts; }
+function projectSample(pts, g) { return pts.map(p => projectGeoVec(p.vec, g)); }
+function drawMeridians(g) { const mode = state.style.meridians; if (!mode)
+    return; for (let lon = -180; lon < 180; lon += 20)
+    drawSampledLine(projectSample(sampleLongitude(lon, 2), g), mode, state.theme.meridian, state.theme.meridianBack, 1); }
+function drawLatitudes(g) { const mode = state.style.latitudes; if (!mode)
+    return; for (let lat = -60; lat <= 60; lat += 30)
+    drawSampledLine(projectSample(sampleLatitude(lat, 2), g), mode, state.theme.latitude, state.theme.latitudeBack, 1); }
+// 虚线纬圈：用于回归线和极圈，mode=1 只画正面，mode=2 正反面都画。
+function drawDashedLatitude(latDeg, mode, g, color = state.theme.surfaceLine, backColor = state.theme.backLine) { if (!mode)
+    return; const dash = 2.5, gap = 1, cycle = dash + gap, step = .75; let prev = null; for (let lon = -180; lon <= 180 + step; lon += step) {
+    const L = Math.min(lon, 180), on = (((L + 180) % cycle) + cycle) % cycle < dash, p = projectGeoVec(geoToVec(latDeg, L), g);
+    if (prev && prev.on && on) {
+        const front = prev.p.z >= -.002 && p.z >= -.002, back = prev.p.z < 0 && p.z < 0;
+        if (front)
+            strokeSegment(prev.p, p, color, 1.05);
+        else if (mode === 2 && back)
+            strokeSegment(prev.p, p, backColor, 1.05);
+    }
+    prev = { p, on };
+} }
+function drawSpecialLatitudes(g) { drawDashedLatitude(OBLIQUITY_DEG, state.style.tropicN, g, state.theme.tropicN, state.theme.tropicNBack); drawDashedLatitude(-OBLIQUITY_DEG, state.style.tropicS, g, state.theme.tropicS, state.theme.tropicSBack); drawDashedLatitude(POLAR_CIRCLE_DEG, state.style.arcticN, g, state.theme.arcticN, state.theme.arcticNBack); drawDashedLatitude(-POLAR_CIRCLE_DEG, state.style.arcticS, g, state.theme.arcticS, state.theme.arcticSBack); }
+const THROUGH_IMAGE_STORAGE_03 = "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";
+// 地轴、自转方向、极点标注和经纬度文字。
+function drawAxis(g) { if (!state.style.axis)
+    return; const n = projectGeoVec(geoToVec(90, 0), g), s = projectGeoVec(geoToVec(-90, 0), g), dx = n.x - s.x, dy = n.y - s.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, pad = g.r * .18; ctx.save(); ctx.beginPath(); ctx.moveTo(s.x - ux * pad, s.y - uy * pad); ctx.lineTo(n.x + ux * pad, n.y + uy * pad); ctx.lineWidth = 1.5; ctx.strokeStyle = state.theme.axis; ctx.stroke(); ctx.restore(); }
+function drawArrowHead(tip, prev, color, size = 8) { const dx = tip.x - prev.x, dy = tip.y - prev.y, len = Math.hypot(dx, dy); if (len < .01)
+    return; const ux = dx / len, uy = dy / len, px = -uy, py = ux; ctx.save(); ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(tip.x, tip.y); ctx.lineTo(tip.x - ux * size + px * size * .48, tip.y - uy * size + py * size * .48); ctx.lineTo(tip.x - ux * size - px * size * .48, tip.y - uy * size - py * size * .48); ctx.closePath(); ctx.fill(); ctx.restore(); }
+function drawSurfaceText(g, lat, lon, text, mode, fontSize = 11, color = state.theme.label, backColor = state.theme.labelBack) { if (!mode)
+    return; const p = projectGeoVec(geoToVec(lat, lon), g); if (p.z < 0 && mode !== 2)
+    return; ctx.save(); ctx.fillStyle = p.z >= 0 ? color : backColor; ctx.font = `${fontSize}px system-ui,"Microsoft YaHei",sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(text, p.x, p.y); ctx.restore(); }
+function drawSpinSurfaceArc(latDeg, g) { const samples = [], lift = 1.10; for (let lon = -135; lon <= 135; lon += 2)
+    samples.push(projectView(rotateGeoToView(scaleVec(geoToVec(latDeg, lon), lift)), g)); ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.lineWidth = 1.8; ctx.strokeStyle = state.theme.spinBack; ctx.beginPath(); if (samples.length) { ctx.moveTo(samples[0].x, samples[0].y); for (const p of samples.slice(1)) ctx.lineTo(p.x, p.y); } ctx.stroke(); ctx.restore(); const tip = samples[samples.length - 1], prev = samples[samples.length - 5] || samples[samples.length - 2]; drawArrowHead(tip, prev, state.theme.spinBack, clamp(g.r * .022, 6, 10)); }
+function drawSpin(g) { if (!state.style.spin)
+    return; drawSpinSurfaceArc(76, g); drawSpinSurfaceArc(-76, g); }
+function drawPoleLabelAt(g, lat, text, mode) { const pole = projectGeoVec(geoToVec(lat, 0), g); if (pole.z < 0 && mode !== 2)
+    return; const center = { x: g.cx, y: g.cy }, dx = pole.x - center.x, dy = pole.y - center.y, len = Math.hypot(dx, dy) || 1, offset = clamp(g.r * .035, 9, 14), x = pole.x - dx / len * offset, y = pole.y - dy / len * offset; ctx.save(); ctx.font = `700 14px system-ui,"Microsoft YaHei",sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 3; ctx.strokeStyle = "#fff"; ctx.strokeText(text, x, y); ctx.fillStyle = pole.z >= 0 ? state.theme.poleLabel : state.theme.poleLabelBack; ctx.fillText(text, x, y); ctx.restore(); }
+function drawPoleLabels(g) { const mode = state.style.poleLabels; if (!mode)
+    return; drawPoleLabelAt(g, 90, "N", mode); drawPoleLabelAt(g, -90, "S", mode); }
+function frontCenterLongitude() { return vecToGeo(rotateViewToGeo({ x: 0, y: 0, z: 1 })).lon; }
+function formatLonLabel(lon) { if (lon === 0)
+    return "0°"; if (Math.abs(lon) === 180)
+    return "180°"; return Math.abs(lon) + "°" + (lon > 0 ? "E" : "W"); }
+function formatLatLabel(lat) { if (lat === 0)
+    return "0°"; return Math.abs(lat) + "°" + (lat > 0 ? "N" : "S"); }
+function drawLatitudeLabelSet(g, mode, lon, color, backColor) { if (!mode)
+    return; for (let lat = -60; lat <= 60; lat += 30)
+    if (lat !== 0)
+        drawSurfaceText(g, lat, lon, formatLatLabel(lat), mode, 10, color, backColor); }
+function drawDegreeLabels(g) { const lonMode = state.style.longitudeLabels, latMode = state.style.latitudeLabels, frontLatMode = state.style.latitudeLabelsFront; if (lonMode)
+    for (let lon = -180; lon <= 180; lon += 20)
+        drawSurfaceText(g, 0, lon, formatLonLabel(lon), lonMode, 10, state.theme.longitudeLabel, state.theme.longitudeLabelBack); drawLatitudeLabelSet(g, latMode, 0, state.theme.latitudeLabel, state.theme.latitudeLabelBack); drawLatitudeLabelSet(g, frontLatMode, frontCenterLongitude(), state.theme.latitudeFrontLabel, state.theme.latitudeFrontLabelBack); }
+// 输入读取与纠错：多数文本框先读原始值，再在 blur 或渲染前纠正。
+function intOrNaN(el) { return /^\s*\d+\s*$/.test(el.value) ? parseInt(el.value, 10) : NaN; }
+function correctInput(el, min, max, fallback, pad2 = false) { let n = intOrNaN(el); if (!Number.isFinite(n))
+    n = fallback; n = clamp(Math.round(n), min, max); el.value = pad2 ? String(n).padStart(2, "0") : String(n); return n; }
+function getRawInputs() { return { latDeg: intOrNaN(dom.latDeg), latMin: intOrNaN(dom.latMin), lonDeg: intOrNaN(dom.lonDeg), lonMin: intOrNaN(dom.lonMin), month: intOrNaN(dom.monthInput), day: intOrNaN(dom.dayInput), hour: intOrNaN(dom.hourInput), minute: intOrNaN(dom.minuteInput) }; }
+function signedCoordinate(deg, min, hem) { let v = deg + min / 60; if (hem === "S" || hem === "W")
+    v *= -1; return v; }
+function validateCoordinateInputs() { const v = getRawInputs(), valid = Number.isFinite(v.latDeg) && v.latDeg >= 0 && v.latDeg <= 90 && Number.isFinite(v.latMin) && v.latMin >= 0 && v.latMin < 60 && !(v.latDeg === 90 && v.latMin > 0) && Number.isFinite(v.lonDeg) && v.lonDeg >= 0 && v.lonDeg <= 180 && Number.isFinite(v.lonMin) && v.lonMin >= 0 && v.lonMin < 60 && !(v.lonDeg === 180 && v.lonMin > 0); return valid ? { lat: signedCoordinate(v.latDeg, v.latMin, state.light.latHem), lon: signedCoordinate(v.lonDeg, v.lonMin, state.light.lonHem) } : null; }
+function validateInputs() { const v = getRawInputs(), monthValid = Number.isFinite(v.month) && v.month >= 1 && v.month <= 12, maxDay = monthValid ? MONTH_DAYS[v.month - 1] : 31, valid = !!validateCoordinateInputs() && monthValid && Number.isFinite(v.day) && v.day >= 1 && v.day <= maxDay && Number.isFinite(v.hour) && v.hour >= 0 && v.hour <= 23 && Number.isFinite(v.minute) && v.minute >= 0 && v.minute <= 59; return { valid, raw: v, maxDay }; }
+// 光照基础计算：日期转年内序号、太阳赤纬、直射点经度和太阳方向向量。
+function dayOfYear(m, d) { let n = d; for (let i = 0; i < m - 1; i++)
+    n += MONTH_DAYS[i]; return n; }
+function solarDeclination(dayN) { const spring = 80, autumn = 266; let phase; if (dayN >= spring && dayN <= autumn)
+    phase = Math.PI * (dayN - spring) / (autumn - spring);
+else {
+    const winterHalf = 365 - autumn + spring, d = dayN > autumn ? dayN - autumn : dayN + 365 - autumn;
+    phase = Math.PI + Math.PI * d / winterHalf;
+} return OBLIQUITY * Math.sin(phase); }
+function getLightParams() { const check = validateInputs(); if (!check.valid)
+    return null; const v = check.raw, lat = signedCoordinate(v.latDeg, v.latMin, state.light.latHem), lon = signedCoordinate(v.lonDeg, v.lonMin, state.light.lonHem), localTime = v.hour + v.minute / 60, dayN = dayOfYear(v.month, v.day), decl = solarDeclination(dayN), subsolarLon = normalizeDeg(lon - 15 * (localTime - 12)); return { lat, lon, month: v.month, day: v.day, hour: v.hour, minute: v.minute, localTime, dayN, decl, subsolarLon }; }
+function sunVectorFromParams(p) { return geoToVec(p.decl * RAD, p.subsolarLon); }
+const THROUGH_IMAGE_STORAGE_04 = "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";
+// 颜色解析工具：支持 #RGB/#RRGGBB/#RRGGBBAA 和 rgb/rgba 字符串。
+function parseCssColor(str) {
+    if (!str)
+        return null;
+    str = String(str).trim();
+    let m;
+    if ((m = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(str))) {
+        let h = m[1];
+        if (h.length === 3)
+            h = h.split("").map(ch => ch + ch).join("") + "FF";
+        const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16), a = h.length >= 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1;
+        return { r, g, b, a };
+    }
+    if ((m = /^rgba?\(([^)]+)\)$/i.exec(str))) {
+        const parts = m[1].split(",").map(s => s.trim());
+        const r = clamp(parseFloat(parts[0]) || 0, 0, 255), g = clamp(parseFloat(parts[1]) || 0, 0, 255), b = clamp(parseFloat(parts[2]) || 0, 0, 255), a = parts.length > 3 ? clamp(parseFloat(parts[3]) || 0, 0, 1) : 1;
+        return { r, g, b, a };
+    }
+    return null;
+}
+function colorToCss(c) { const r = Math.round(clamp(c.r, 0, 255)), g = Math.round(clamp(c.g, 0, 255)), b = Math.round(clamp(c.b, 0, 255)), a = clamp(c.a == null ? 1 : c.a, 0, 1); return a >= .999 ? `#${[r, g, b].map(v => v.toString(16).padStart(2, "0")).join("")}` : `rgba(${r},${g},${b},${+a.toFixed(3)})`; }
+function rgbaComponents(str, fallback) { return parseCssColor(str) || parseCssColor(fallback) || { r: 0, g: 0, b: 0, a: 1 }; }
+// 夜半球阴影：逐像素判断球面点与太阳方向点积，点积小于 0 为夜半球。
+function drawShadow(g, sunGeo) { let cache = drawShadow.cache; if (!cache || cache.w !== g.w || cache.h !== g.h) {
+    const off = document.createElement("canvas");
+    off.width = g.w;
+    off.height = g.h;
+    cache = drawShadow.cache = { w: g.w, h: g.h, off, ctx: off.getContext("2d"), img: null };
+    cache.img = cache.ctx.createImageData(g.w, g.h);
+} const data = cache.img.data; data.fill(0); for (let y = 0; y < g.h; y++)
+    for (let x = 0; x < g.w; x++) {
+        const vx = (x + .5 - g.cx) / g.r, vy = (g.cy - (y + .5)) / g.r, d2 = vx * vx + vy * vy;
+        if (d2 > 1)
+            continue;
+        const vz = Math.sqrt(Math.max(0, 1 - d2)), geo = rotateViewToGeo({ x: vx, y: vy, z: vz });
+        if (dot(geo, sunGeo) < 0) {
+            const sc = rgbaComponents(state.theme.shadow, DEFAULT_THEME.shadow), idx = (y * g.w + x) * 4;
+            data[idx] = sc.r;
+            data[idx + 1] = sc.g;
+            data[idx + 2] = sc.b;
+            data[idx + 3] = Math.round(sc.a * 255);
+        }
+    } cache.ctx.putImageData(cache.img, 0, 0); ctx.save(); ctx.beginPath(); ctx.arc(g.cx, g.cy, g.r, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(cache.off, 0, 0, g.w, g.h); ctx.restore(); }
+function drawSurfacePolyline(vecPts, g, mode, color, backColor, width) { drawSampledLine(vecPts.map(v => projectGeoVec(v, g)), mode, color, backColor, width); }
+// 光照叠加层：太阳直射点、定位十字、太阳光线、晨昏线和定位准星。
+function drawSubsolarPoint(g, sunGeo, mode) { if (!mode)
+    return; drawSurfacePolyline(smallCirclePoints(norm(sunGeo), 1.65, 72), g, mode, state.theme.subsolar, state.theme.subsolarBack, 1.5); }
+function drawCoordinateCross(g, coord, mode) { if (!coord || !mode)
+    return; const c = geoToVec(coord.lat, coord.lon), basis = tangentBasis(c), d1 = norm(addVec(basis.u, basis.w)), d2 = norm(addVec(basis.u, scaleVec(basis.w, -1))), r = 1.65; drawSurfacePolyline(smallDiameterPoints(c, d1, r, 18), g, mode, state.theme.location, state.theme.locationBack, 1.5); drawSurfacePolyline(smallDiameterPoints(c, d2, r, 18), g, mode, state.theme.location, state.theme.locationBack, 1.5); }
+function drawRayThroughGeoPoint(g, pointGeo, sunGeo) { if (!pointGeo)
+    return; const half = 1.0, a = rotateGeoToView(addVec(pointGeo, scaleVec(sunGeo, -half))), b = rotateGeoToView(addVec(pointGeo, scaleVec(sunGeo, half))), p1 = projectView(a, g), p2 = projectView(b, g), center = projectView(rotateGeoToView(pointGeo), g), color = center.z >= 0 ? state.theme.sunRay : state.theme.sunRayBack; ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); ctx.restore(); }
+function drawSunRays(g, sunGeo, coord) { const s = norm(sunGeo), c = coord ? geoToVec(coord.lat, coord.lon) : null; drawRayThroughGeoPoint(g, s, s); if (c && dot(c, s) >= 0)
+    drawRayThroughGeoPoint(g, c, s); }
+function drawTerminator(g, sunGeo, type, mode) { if (!mode)
+    return; const pole = Math.abs(sunGeo.y) < .92 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 }, a = norm(cross(sunGeo, pole)), b = norm(cross(sunGeo, a)); let pts = []; const sunLon = vecToGeo(sunGeo).lon; for (let t = 0; t <= 360; t += 1.5) {
+    const r = t * DEG, v = { x: a.x * Math.cos(r) + b.x * Math.sin(r), y: a.y * Math.cos(r) + b.y * Math.sin(r), z: a.z * Math.cos(r) + b.z * Math.sin(r) }, geo = vecToGeo(v), h = normalizeDeg(geo.lon - sunLon), isDawn = h < 0;
+    if ((type === "dawn" && isDawn) || (type === "dusk" && !isDawn)) {
+        pts.push(projectGeoVec(v, g));
+    }
+    else {
+        if (pts.length > 1)
+            drawSampledLine(pts, mode, type === "dawn" ? state.theme.dawn : state.theme.dusk, type === "dawn" ? state.theme.dawnBack : state.theme.duskBack, 4);
+        pts = [];
+    }
+} if (pts.length > 1)
+    drawSampledLine(pts, mode, type === "dawn" ? state.theme.dawn : state.theme.dusk, type === "dawn" ? state.theme.dawnBack : state.theme.duskBack, 4); }
+function drawCrosshair(g) { if (!state.locating)
+    return; ctx.save(); ctx.strokeStyle = "rgba(0,0,0,.75)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(g.w, g.h); ctx.moveTo(g.w, 0); ctx.lineTo(0, g.h); ctx.stroke(); ctx.restore(); }
+// 同步渲染公共工具：从输入读取当前日期，并为各辅助图提供日期/尺寸/配色。
+function getDateForSync() { const v = getRawInputs(), mOk = Number.isFinite(v.month) && v.month >= 1 && v.month <= 12, dMax = mOk ? MONTH_DAYS[v.month - 1] : 31, dOk = Number.isFinite(v.day) && v.day >= 1 && v.day <= dMax; const m = mOk ? v.month : 3, d = dOk ? v.day : 21; return { month: m, day: d, dayN: dayOfYear(m, d) }; }
+function syncOrbitPoint(theta, g) { return { x: g.cx + g.rx * Math.cos(theta), y: g.cy + g.ry * Math.sin(theta) }; }
+function syncThetaFromDay(dayN) { const segs = [{ a: 80, b: 173, t0: -Math.PI / 2, t1: -Math.PI }, { a: 173, b: 266, t0: -Math.PI, t1: -Math.PI * 1.5 }, { a: 266, b: 356, t0: -Math.PI * 1.5, t1: -Math.PI * 2 }, { a: 356, b: 445, t0: -Math.PI * 2, t1: -Math.PI * 2.5 }]; let d = dayN < 80 ? dayN + 365 : dayN; for (const s of segs) {
+    if (d >= s.a && d <= s.b) {
+        const u = (d - s.a) / (s.b - s.a || 1);
+        return s.t0 + (s.t1 - s.t0) * u;
+    }
+} return -Math.PI / 2; }
+function syncCanvasRatio(canvas) {
+    const id = canvas && canvas.id;
+    if (id === "syncMotionCanvas")
+        return .76;
+    if (id === "syncOrbitCanvas")
+        return .70;
+    if (id === "syncRectCanvas")
+        return .58;
+    if (id === "syncSubsolarYearCanvas")
+        return .58;
+    if (id === "syncNoonAltitudeYearCanvas")
+        return .58;
+    if (id === "syncAltitudeDayCanvas")
+        return .58;
+    return .62;
+}
+function resizeSyncCanvas(canvas) {
+    if (!canvas)
+        return null;
+    const box = canvas.parentElement, dpr = window.devicePixelRatio || 1, size = currentRenderSide(box), ratio = syncCanvasRatio(canvas);
+    const w = size, h = Math.max(100, Math.round(size * ratio));
+    box.style.width = w + "px";
+    box.style.height = h + "px";
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+    const c = canvas.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { canvas, ctx: c, w, h, cx: w / 2, cy: h / 2, rx: w * .36, ry: h * .24 };
+}
+function syncFg() { return state.theme.syncFg || DEFAULT_THEME.syncFg; }
+function withAlphaColor(color, a) { const cc = rgbaComponents(color || "#000", "#000"); return `rgba(${cc.r},${cc.g},${cc.b},${clamp(a, 0, 1)})`; }
+function syncAlpha(a) { return withAlphaColor(syncFg(), a); }
+function syncColor(color) { if (color === "#000")
+    return syncFg(); if (color === "#333")
+    return syncAlpha(.78); if (color === "rgba(0,0,0,.22)")
+    return syncAlpha(.22); if (color === "rgba(0,0,0,.55)")
+    return syncAlpha(.55); if (color === "rgba(0,0,0,.78)")
+    return syncAlpha(.78); return color; }
+// 同步图 2D 绘图工具：会通过 syncColor() 适配“渲染模块前景色”。
+function drawPolyline2D(c, pts, color = "#000", width = 1.3) { if (!pts || pts.length < 2)
+    return; c.save(); c.strokeStyle = syncColor(color); c.lineWidth = width; c.lineCap = "round"; c.lineJoin = "round"; c.beginPath(); c.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++)
+    c.lineTo(pts[i].x, pts[i].y); c.stroke(); c.restore(); }
+function drawArrow2D(c, tip, prev, color = "#000", size = 7) { const dx = tip.x - prev.x, dy = tip.y - prev.y, len = Math.hypot(dx, dy); if (len < .01)
+    return; const ux = dx / len, uy = dy / len, px = -uy, py = ux; c.save(); c.fillStyle = syncColor(color); c.beginPath(); c.moveTo(tip.x, tip.y); c.lineTo(tip.x - ux * size + px * size * .45, tip.y - uy * size + py * size * .45); c.lineTo(tip.x - ux * size - px * size * .45, tip.y - uy * size - py * size * .45); c.closePath(); c.fill(); c.restore(); }
+function drawSyncEarth3D(c, x, y, r, sunX, sunY) { c.save(); c.fillStyle = "#fff"; c.strokeStyle = syncFg(); c.lineWidth = 1.4; c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill(); c.stroke(); const lx = (sunX - x) / (Math.hypot(sunX - x, sunY - y) || 1), ly = (y - sunY) / (Math.hypot(sunX - x, sunY - y) || 1), light = norm({ x: lx, y: ly, z: .18 }); const img = c.createImageData(Math.ceil(r * 2), Math.ceil(r * 2)), data = img.data, sz = img.width; for (let py = 0; py < img.height; py++) {
+    for (let px = 0; px < img.width; px++) {
+        const sx = (px + .5 - r) / r, sy = (r - (py + .5)) / r, d2 = sx * sx + sy * sy;
+        if (d2 > 1)
+            continue;
+        const n = { x: sx, y: sy, z: Math.sqrt(Math.max(0, 1 - d2)) };
+        if (dot(n, light) < 0) {
+            const sc = rgbaComponents(state.theme.shadow, DEFAULT_THEME.shadow), idx = (py * sz + px) * 4;
+            data[idx] = sc.r;
+            data[idx + 1] = sc.g;
+            data[idx + 2] = sc.b;
+            data[idx + 3] = Math.round(sc.a * 255);
+        }
+    }
+} const off = document.createElement("canvas"); off.width = img.width; off.height = img.height; off.getContext("2d").putImageData(img, 0, 0); c.save(); c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.clip(); c.drawImage(off, x - r, y - r); c.restore(); const axis = { x: Math.sin(OBLIQUITY), y: -Math.cos(OBLIQUITY) }, len = r * 1.68; c.lineCap = "round"; c.strokeStyle = syncAlpha(.78); c.lineWidth = 1.6; c.beginPath(); c.moveTo(x - axis.x * len, y - axis.y * len); c.lineTo(x + axis.x * len, y + axis.y * len); c.stroke(); c.restore(); }
+function drawSyncSeason(c, g, theta, label) { const p = syncOrbitPoint(theta, g); c.save(); c.fillStyle = "#fff"; c.strokeStyle = syncFg(); c.lineWidth = 1.2; c.beginPath(); c.arc(p.x, p.y, 4, 0, Math.PI * 2); c.fill(); c.stroke(); c.fillStyle = syncFg(); c.font = "12px system-ui,'Microsoft YaHei',sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; const ox = theta === -Math.PI ? -28 : theta === -Math.PI * 2 ? 28 : 0, oy = theta === -Math.PI / 2 ? -18 : theta === -Math.PI * 1.5 ? 18 : 0; c.fillText(label, p.x + ox, p.y + oy); c.restore(); }
+function drawSyncSegmentLabel(c, g, theta, text) { const p = syncOrbitPoint(theta, g), cx = g.cx, cy = g.cy; const vx = p.x - cx, vy = p.y - cy, l = Math.hypot(vx, vy) || 1; c.save(); c.fillStyle = syncFg(); c.font = "12px system-ui,'Microsoft YaHei',sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(text, p.x + vx / l * 18, p.y + vy / l * 14); c.restore(); }
+// 同步图 1：地日位置关系。
+function renderOrbitRelation() { const g = resizeSyncCanvas(dom.syncOrbitCanvas); if (!g)
+    return; const c = g.ctx; c.clearRect(0, 0, g.w, g.h); c.fillStyle = state.theme.renderBg || DEFAULT_THEME.renderBg; c.fillRect(0, 0, g.w, g.h); c.save(); c.strokeStyle = syncFg(); c.lineWidth = 1.4; c.beginPath(); c.ellipse(g.cx, g.cy, g.rx, g.ry, 0, 0, Math.PI * 2); c.stroke(); c.restore(); drawSyncSegmentLabel(c, g, -Math.PI * .75, "减速"); drawSyncSegmentLabel(c, g, -Math.PI * 1.25, "加速"); drawSyncSegmentLabel(c, g, -Math.PI * 1.75, "加速"); drawSyncSegmentLabel(c, g, -Math.PI * 2.25, "减速"); drawSyncSeason(c, g, -Math.PI / 2, "春分"); drawSyncSeason(c, g, -Math.PI, "夏至"); drawSyncSeason(c, g, -Math.PI * 1.5, "秋分"); drawSyncSeason(c, g, -Math.PI * 2, "冬至"); const sun = { x: g.cx + g.rx * .18, y: g.cy }; c.save(); c.fillStyle = syncFg(); c.beginPath(); c.arc(sun.x, sun.y, 4, 0, Math.PI * 2); c.fill(); c.font = "12px system-ui,'Microsoft YaHei',sans-serif"; c.textAlign = "center"; c.fillText("太阳", sun.x, sun.y - 12); c.restore(); const date = getDateForSync(), theta = syncThetaFromDay(date.dayN), p = syncOrbitPoint(theta, g); drawSyncEarth3D(c, p.x, p.y, Math.max(14, Math.min(g.w, g.h) * .048), sun.x, sun.y); c.save(); c.fillStyle = syncAlpha(.78); c.font = "12px system-ui,'Microsoft YaHei',sans-serif"; c.textAlign = "center"; c.fillText(date.month + "月" + date.day + "日", p.x, p.y + Math.max(24, Math.min(g.w, g.h) * .07)); c.restore(); }
+function motionProject(v, g, scale) { const yaw = state.sync.motionRot || 0, cy = Math.cos(yaw), sy = Math.sin(yaw), x1 = v.x * cy - v.y * sy, y1 = v.x * sy + v.y * cy; return { x: g.cx + x1 * scale, y: g.h * .63 - y1 * scale * .42 - v.z * scale, z: y1 }; }
+function motionPointFromAltAz(altDeg, azDeg) { const alt = clamp(altDeg, 0, 90) * DEG, az = azDeg * DEG, h = Math.cos(alt); return { x: Math.sin(az) * h, y: Math.cos(az) * h, z: Math.sin(alt) }; }
+function drawMotionCircle(c, g, scale) { const pts = []; for (let i = 0; i <= 144; i++) {
+    const a = 2 * Math.PI * i / 144;
+    pts.push(motionProject({ x: Math.sin(a), y: Math.cos(a), z: 0 }, g, scale));
+} drawPolyline2D(c, pts, "#000", 1.3); drawPolyline2D(c, [motionProject({ x: -1, y: 0, z: 0 }, g, scale), motionProject({ x: 1, y: 0, z: 0 }, g, scale)], "#000", 1); drawPolyline2D(c, [motionProject({ x: 0, y: -1, z: 0 }, g, scale), motionProject({ x: 0, y: 1, z: 0 }, g, scale)], "#000", 1); const labels = [['E', { x: 1.08, y: 0, z: 0 }], ['W', { x: -1.08, y: 0, z: 0 }], ['N', { x: 0, y: 1.08, z: 0 }], ['S', { x: 0, y: -1.08, z: 0 }]]; c.save(); c.fillStyle = syncFg(); c.font = "12px system-ui,'Microsoft YaHei',sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; for (const [t, v] of labels) {
+    const p = motionProject(v, g, scale);
+    c.fillText(t, p.x, p.y);
+} c.restore(); const mer = []; for (let i = 0; i <= 72; i++) {
+    const a = Math.PI * i / 72;
+    mer.push(motionProject({ x: 0, y: Math.cos(a), z: Math.sin(a) }, g, scale));
+} drawPolyline2D(c, mer, "#000", 1.2); c.save(); c.fillStyle = syncFg(); c.font = "12px system-ui,'Microsoft YaHei',sans-serif"; const top = motionProject({ x: 0, y: 0, z: 1.07 }, g, scale); c.textAlign = "center"; }
+function solarPathData(lat, declDeg, label) { const decl = declDeg * DEG, latRad = lat * DEG, cosH0 = -Math.tan(latRad) * Math.tan(decl), pts = []; let hasRiseSet = true, isPolarDay = false, isPolarNight = false, H0; if (cosH0 < -1) {
+    isPolarDay = true;
+    hasRiseSet = false;
+    H0 = 180;
+}
+else if (cosH0 > 1) {
+    isPolarNight = true;
+    hasRiseSet = false;
+    H0 = 0;
+}
+else {
+    H0 = Math.acos(clamp(cosH0, -1, 1)) * RAD;
+} if (!isPolarNight) {
+    const steps = isPolarDay ? 144 : 96, start = isPolarDay ? -180 : -H0, end = isPolarDay ? 180 : H0;
+    for (let i = 0; i <= steps; i++) {
+        const H = start + (end - start) * i / steps, s = solarAt(lat, decl, H);
+        if (s.altitude >= -1e-6)
+            pts.push({ alt: s.altitude, az: s.azimuth, world: motionPointFromAltAz(s.altitude, s.azimuth) });
+    }
+} const sunrise = hasRiseSet ? solarAt(lat, decl, -H0) : null, noon = solarAt(lat, decl, 0), sunset = hasRiseSet ? solarAt(lat, decl, H0) : null; return { label, pts, sunrise, sunset, noon, hasRiseSet, isPolarDay, isPolarNight }; }
+function drawMotionPath(c, g, scale, data) { const pts = data.pts.map(p => motionProject(p.world, g, scale)); drawPolyline2D(c, pts, "#000", 1.35); if (pts.length > 12) {
+    drawArrow2D(c, pts[Math.max(2, Math.floor(pts.length * .25))], pts[Math.max(0, Math.floor(pts.length * .25) - 2)]);
+    drawArrow2D(c, pts[Math.max(2, Math.floor(pts.length * .75))], pts[Math.max(0, Math.floor(pts.length * .75) - 2)]);
+} function markSolarPoint(sol, text, above) { if (!sol || sol.altitude < -1e-6)
+    return; const az = Number.isFinite(sol.azimuth) ? sol.azimuth : 0, p = motionProject(motionPointFromAltAz(sol.altitude, az), g, scale); c.save(); c.fillStyle = "#fff"; c.strokeStyle = syncFg(); c.lineWidth = 1.1; c.beginPath(); c.arc(p.x, p.y, 3.6, 0, Math.PI * 2); c.fill(); c.stroke(); c.fillStyle = syncFg(); c.font = "11px system-ui,'Microsoft YaHei',sans-serif"; c.textAlign = "center"; c.textBaseline = above ? "bottom" : "top"; c.fillText(text, p.x, p.y + (above ? -6 : 6)); c.restore(); } if (data.hasRiseSet) {
+    markSolarPoint(data.sunrise, data.label + "日出", false);
+    markSolarPoint(data.sunset, data.label + "日落", false);
+} markSolarPoint(data.noon, data.label + "正午" + formatDegMin(Math.abs(data.noon.altitude), false), true); }
+// 同步图 2：太阳视运动轨迹。根据观测纬度绘制二分、夏至、冬至三条轨迹。
+function renderSolarMotion() { const g = resizeSyncCanvas(dom.syncMotionCanvas); if (!g)
+    return; const c = g.ctx; c.clearRect(0, 0, g.w, g.h); c.fillStyle = state.theme.renderBg || DEFAULT_THEME.renderBg; c.fillRect(0, 0, g.w, g.h); const coord = validateCoordinateInputs() || { lat: 0, lon: 0 }, lat = coord.lat, scale = Math.min(g.w, g.h) * .32; drawMotionCircle(c, g, scale); const paths = [solarPathData(lat, 0, "二分"), solarPathData(lat, OBLIQUITY_DEG, "夏至"), solarPathData(lat, -OBLIQUITY_DEG, "冬至")]; for (const p of paths)
+    drawMotionPath(c, g, scale, p); c.save(); c.fillStyle = syncAlpha(.78); c.font = "12px system-ui,'Microsoft YaHei',sans-serif"; c.textAlign = "left"; c.fillText(formatHemDegMin(lat, "N", "S"), 12, 18); c.restore(); }
+function rectLatLabel(lat) { if (Math.abs(lat) < 1e-6)
+    return "0°"; return formatHemDegMin(lat, "N", "S"); }
+function drawRectBase(c, g, title, latSpan = 90) { const left = g.w * .12, top = g.h * .18, mapW = g.w * .78, mapH = g.h * .62; c.save(); c.fillStyle = "#fff"; c.fillRect(0, 0, g.w, g.h); c.strokeStyle = syncFg(); c.lineWidth = 1.2; c.strokeRect(left, top, mapW, mapH); function pxLon(lon) { return left + (lon + 180) / 360 * mapW; } function pyLat(lat) { return top + (latSpan - lat) / (latSpan * 2) * mapH; } c.lineWidth = .75; c.strokeStyle = syncAlpha(.22); for (let lon = -150; lon <= 150; lon += 30) {
+    c.beginPath();
+    c.moveTo(pxLon(lon), top);
+    c.lineTo(pxLon(lon), top + mapH);
+    c.stroke();
+} const latStep = latSpan <= 30 ? 10 : 30; for (let lat = -latSpan; lat <= latSpan; lat += latStep) {
+    c.beginPath();
+    c.moveTo(left, pyLat(lat));
+    c.lineTo(left + mapW, pyLat(lat));
+    c.stroke();
+} c.font = "11px system-ui,'Microsoft YaHei',sans-serif"; c.fillStyle = syncFg(); c.textAlign = "center"; c.textBaseline = "top"; for (let lon = -180; lon <= 180; lon += 60) {
+    c.fillText(formatLonLabel(lon), pxLon(lon), top + mapH + 5);
+} c.textAlign = "right"; c.textBaseline = "middle"; const labels = latSpan <= 30 ? [OBLIQUITY_DEG, 0, -OBLIQUITY_DEG] : [90, POLAR_CIRCLE_DEG, OBLIQUITY_DEG, 0, -OBLIQUITY_DEG, -POLAR_CIRCLE_DEG, -90]; for (const lat of labels) {
+    const y = pyLat(lat);
+    c.strokeStyle = lat === 0 ? "#000" : "rgba(0,0,0,.55)";
+    c.lineWidth = lat === 0 ? 1.15 : .85;
+    c.beginPath();
+    c.moveTo(left, y);
+    c.lineTo(left + mapW, y);
+    c.stroke();
+    c.fillStyle = syncFg();
+    c.fillText(rectLatLabel(lat), left - 5, y);
+} c.textAlign = "left"; c.textBaseline = "middle"; c.fillStyle = syncAlpha(.78); c.fillText(title, left, top - 18); c.restore(); return { left, top, mapW, mapH, pxLon, pyLat }; }
+function drawRectPoint(c, x, y, label, dx = 0, dy = -8) { c.save(); c.fillStyle = "#fff"; c.strokeStyle = syncFg(); c.lineWidth = 1.15; c.beginPath(); c.arc(x, y, 3.6, 0, Math.PI * 2); c.fill(); c.stroke(); c.fillStyle = syncFg(); c.font = "11px system-ui,'Microsoft YaHei',sans-serif"; c.textAlign = "center"; c.textBaseline = dy < 0 ? "bottom" : "top"; c.fillText(label, x + dx, y + dy); c.restore(); }
+function rectTerminatorPoints(declDeg, subsolarLon) { const sign = declDeg >= 0 ? 1 : -1, pc = 90 - Math.abs(declDeg); return [{ lon: subsolarLon - 180, lat: sign * pc }, { lon: subsolarLon - 90, lat: 0 }, { lon: subsolarLon, lat: -sign * pc }, { lon: subsolarLon + 90, lat: 0 }, { lon: subsolarLon + 180, lat: sign * pc }]; }
+// 同步图 3：光照矩形投影图。
+function renderRectProjection() { const g = resizeSyncCanvas(dom.syncRectCanvas); if (!g)
+    return; const c = g.ctx; c.clearRect(0, 0, g.w, g.h); const params = getLightParams(), date = getDateForSync(), declDeg = (params ? params.decl : solarDeclination(date.dayN)) * RAD, subsolarLon = params ? params.subsolarLon : 0, base = drawRectBase(c, g, "", 90); const { left, top, mapW, mapH, pxLon, pyLat } = base; c.save(); c.beginPath(); c.rect(left, top, mapW, mapH); c.clip(); c.fillStyle = DEFAULT_THEME.shadow; if (Math.abs(declDeg) < .15) {
+    for (const center of [subsolarLon - 360, subsolarLon, subsolarLon + 360]) {
+        const x1 = pxLon(center - 270), x2 = pxLon(center - 90), x3 = pxLon(center + 90), x4 = pxLon(center + 270);
+        c.fillRect(x1, top, x2 - x1, mapH);
+        c.fillRect(x3, top, x4 - x3, mapH);
+    }
+    c.strokeStyle = syncFg();
+    c.lineWidth = 1.7;
+    for (const lon of [subsolarLon - 90, subsolarLon + 90]) {
+        for (const shift of [-360, 0, 360]) {
+            const x = pxLon(lon + shift);
+            c.beginPath();
+            c.moveTo(x, top);
+            c.lineTo(x, top + mapH);
+            c.stroke();
+        }
+    }
+}
+else {
+    for (const shift of [-360, 0, 360]) {
+        const raw = rectTerminatorPoints(declDeg, subsolarLon + shift), pts = raw.map(p => ({ x: pxLon(p.lon), y: pyLat(p.lat) }));
+        c.beginPath();
+        if (declDeg > 0) {
+            c.moveTo(pts[0].x, top + mapH);
+            for (const p of pts)
+                c.lineTo(p.x, p.y);
+            c.lineTo(pts[pts.length - 1].x, top + mapH);
+        }
+        else {
+            c.moveTo(pts[0].x, top);
+            for (const p of pts)
+                c.lineTo(p.x, p.y);
+            c.lineTo(pts[pts.length - 1].x, top);
+        }
+        c.closePath();
+        c.fill();
+        c.strokeStyle = syncFg();
+        c.lineWidth = 1.7;
+        c.beginPath();
+        c.moveTo(pts[0].x, pts[0].y);
+        for (const p of pts.slice(1))
+            c.lineTo(p.x, p.y);
+        c.stroke();
+    }
+} c.restore(); c.save(); const sx = pxLon(subsolarLon), sy = pyLat(declDeg); drawRectPoint(c, sx, sy, "太阳直射点", 0, 10); c.restore(); }
+// 同步图 4：太阳直射点年变化。
+function renderSubsolarYear() { const g = resizeSyncCanvas(dom.syncSubsolarYearCanvas); if (!g)
+    return; const c = g.ctx; c.clearRect(0, 0, g.w, g.h); c.fillStyle = state.theme.renderBg || DEFAULT_THEME.renderBg; c.fillRect(0, 0, g.w, g.h); const left = g.w * .14, top = g.h * .16, w = g.w * .74, h = g.h * .62, spring = 80, nextSpring = 445; function pxDay(dayN) { const d = dayN < spring ? dayN + 365 : dayN; return left + (d - spring) / (nextSpring - spring) * w; } function pyLat(lat) { return top + (OBLIQUITY_DEG - lat) / (OBLIQUITY_DEG * 2) * h; } c.save(); c.strokeStyle = syncFg(); c.lineWidth = 1.2; c.strokeRect(left, top, w, h); c.strokeStyle = syncAlpha(.22); c.lineWidth = .8; const marks = [{ name: "春分", day: 80, lat: 0 }, { name: "夏至", day: 173, lat: OBLIQUITY_DEG }, { name: "秋分", day: 266, lat: 0 }, { name: "冬至", day: 356, lat: -OBLIQUITY_DEG }, { name: "次年春分", day: 445, lat: 0 }]; for (const m of marks) {
+    const x = left + (m.day - spring) / (nextSpring - spring) * w;
+    c.beginPath();
+    c.moveTo(x, top);
+    c.lineTo(x, top + h);
+    c.stroke();
+} for (const lat of [OBLIQUITY_DEG, 0, -OBLIQUITY_DEG]) {
+    const y = pyLat(lat);
+    c.beginPath();
+    c.moveTo(left, y);
+    c.lineTo(left + w, y);
+    c.stroke();
+} const pts = []; for (let d = spring; d <= nextSpring; d++) {
+    pts.push({ x: left + (d - spring) / (nextSpring - spring) * w, y: pyLat(solarDeclination(d) * RAD) });
+} drawPolyline2D(c, pts, "#000", 1.6); for (const m of marks) {
+    const x = left + (m.day - spring) / (nextSpring - spring) * w, y = pyLat(m.lat);
+    drawRectPoint(c, x, y, m.name, 0, m.lat >= 0 ? -8 : 12);
+} const date = getDateForSync(), curDay = date.dayN < spring ? date.dayN + 365 : date.dayN, curLat = solarDeclination(curDay) * RAD, curX = pxDay(curDay), curY = pyLat(curLat); c.fillStyle = syncFg(); c.beginPath(); c.arc(curX, curY, 5, 0, Math.PI * 2); c.fill(); c.font = "11px system-ui,'Microsoft YaHei',sans-serif"; c.textAlign = "left"; c.textBaseline = "middle"; c.fillText("当前 " + date.month + "月" + date.day + "日", curX + 8, curY); c.fillStyle = syncFg(); c.textAlign = "center"; c.textBaseline = "top"; c.textAlign = "right"; c.textBaseline = "middle"; for (const lat of [OBLIQUITY_DEG, 0, -OBLIQUITY_DEG])
+    c.fillText(rectLatLabel(lat), left - 5, pyLat(lat)); c.textAlign = "left"; c.fillStyle = syncAlpha(.78); c.restore(); }
+// 同步图 5：正午太阳高度年变化。
+function renderNoonAltitudeYear() { const g = resizeSyncCanvas(dom.syncNoonAltitudeYearCanvas); if (!g)
+    return; const c = g.ctx; c.clearRect(0, 0, g.w, g.h); c.fillStyle = state.theme.renderBg || DEFAULT_THEME.renderBg; c.fillRect(0, 0, g.w, g.h); const coord = validateCoordinateInputs() || { lat: 0, lon: 0 }, date = getDateForSync(), left = g.w * .14, top = g.h * .14, w = g.w * .76, h = g.h * .64; function px(day) { return left + (day - 1) / 364 * w; } function py(a) { return top + (90 - a) / 180 * h; } c.save(); c.strokeStyle = syncFg(); c.lineWidth = 1.2; c.strokeRect(left, top, w, h); c.strokeStyle = syncAlpha(.22); c.lineWidth = .8; const monthStarts = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335]; for (const d of monthStarts) {
+    c.beginPath();
+    c.moveTo(px(d), top);
+    c.lineTo(px(d), top + h);
+    c.stroke();
+} for (let a = -60; a <= 60; a += 30) {
+    c.beginPath();
+    c.moveTo(left, py(a));
+    c.lineTo(left + w, py(a));
+    c.stroke();
+} c.strokeStyle = syncFg(); c.lineWidth = 1; c.beginPath(); c.moveTo(left, py(0)); c.lineTo(left + w, py(0)); c.stroke(); const pts = []; for (let d = 1; d <= 365; d++) {
+    const alt = solarAt(coord.lat, solarDeclination(d), 0).altitude;
+    pts.push({ x: px(d), y: py(alt) });
+} drawPolyline2D(c, pts, "#000", 1.6); const curAlt = solarAt(coord.lat, solarDeclination(date.dayN), 0).altitude; drawRectPoint(c, px(date.dayN), py(curAlt), "当前", 0, -8); c.fillStyle = syncFg(); c.font = "11px system-ui,'Microsoft YaHei',sans-serif"; c.textAlign = "center"; c.textBaseline = "top"; const monthLabels = [{d:1,t:"1月"},{d:91,t:"4月"},{d:182,t:"7月"},{d:274,t:"10月"},{d:365,t:"12月"}]; for (const m of monthLabels)
+    c.fillText(m.t, px(m.d), top + h + 5); c.textAlign = "right"; c.textBaseline = "middle"; for (let a = -90; a <= 90; a += 30)
+    c.fillText(a + "°", left - 5, py(a)); c.textAlign = "left"; c.fillStyle = syncAlpha(.78); c.restore(); }
+// 同步图 6：太阳高度日变化。
+function renderAltitudeDay() { const g = resizeSyncCanvas(dom.syncAltitudeDayCanvas); if (!g)
+    return; const c = g.ctx; c.clearRect(0, 0, g.w, g.h); c.fillStyle = state.theme.renderBg || DEFAULT_THEME.renderBg; c.fillRect(0, 0, g.w, g.h); const coord = validateCoordinateInputs() || { lat: 0, lon: 0 }, date = getDateForSync(), decl = solarDeclination(date.dayN), params = getLightParams(), curT = params ? params.localTime : 12, left = g.w * .14, top = g.h * .14, w = g.w * .76, h = g.h * .64; function px(t) { return left + t / 24 * w; } function py(a) { return top + (90 - a) / 180 * h; } c.save(); c.strokeStyle = syncFg(); c.lineWidth = 1.2; c.strokeRect(left, top, w, h); c.strokeStyle = syncAlpha(.22); c.lineWidth = .8; for (let t = 0; t <= 24; t += 6) {
+    c.beginPath();
+    c.moveTo(px(t), top);
+    c.lineTo(px(t), top + h);
+    c.stroke();
+} for (let a = -60; a <= 60; a += 30) {
+    c.beginPath();
+    c.moveTo(left, py(a));
+    c.lineTo(left + w, py(a));
+    c.stroke();
+} c.strokeStyle = syncFg(); c.lineWidth = 1; c.beginPath(); c.moveTo(left, py(0)); c.lineTo(left + w, py(0)); c.stroke(); const pts = []; for (let i = 0; i <= 288; i++) {
+    const t = i / 288 * 24, H = 15 * (t - 12), alt = solarAt(coord.lat, decl, H).altitude;
+    pts.push({ x: px(t), y: py(alt) });
+} drawPolyline2D(c, pts, "#000", 1.6); const curAlt = solarAt(coord.lat, decl, 15 * (curT - 12)).altitude; drawRectPoint(c, px(curT), py(curAlt), "当前", 0, -8); c.fillStyle = syncFg(); c.font = "11px system-ui,'Microsoft YaHei',sans-serif"; c.textAlign = "center"; c.textBaseline = "top"; for (let t = 0; t <= 24; t += 6)
+    c.fillText(t + "时", px(t), top + h + 5); c.textAlign = "right"; c.textBaseline = "middle"; for (let a = -90; a <= 90; a += 30)
+    c.fillText(a + "°", left - 5, py(a)); c.textAlign = "left"; c.fillStyle = syncAlpha(.78); c.restore(); }
+// 统一刷新所有同步图。若新增同步图，需在这里加入调用。
+function renderSyncPanel() { renderOrbitRelation(); renderSolarMotion(); renderRectProjection(); renderSubsolarYear(); renderNoonAltitudeYear(); renderAltitudeDay(); }
+const THROUGH_IMAGE_STORAGE_05 = "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";
+// 主渲染入口：一次完整刷新会重设画布尺寸、绘制地球、光照层、同步图和信息面板。
+function render() { state.rotation.x = normalizeRadIfLarge(state.rotation.x); state.rotation.y = normalizeRadIfLarge(state.rotation.y); state.rotation.z = normalizeRadIfLarge(state.rotation.z); resizeCanvas(); const g = getGeom(); clearCanvas(g); drawOutline(g); drawMeridians(g); drawLatitudes(g); drawSpecialLatitudes(g); drawDegreeLabels(g); drawSpin(g); const coord = validateCoordinateInputs(), params = getLightParams(); if (params) {
+    const sunGeo = sunVectorFromParams(params);
+    if (state.light.shadow)
+        drawShadow(g, sunGeo);
+    drawTerminator(g, sunGeo, "dawn", state.light.dawnLine);
+    drawTerminator(g, sunGeo, "dusk", state.light.duskLine);
+    if (state.light.sunRay)
+        drawSunRays(g, sunGeo, coord);
+    drawSubsolarPoint(g, sunGeo, state.light.subsolar);
+} drawCoordinateCross(g, coord, state.light.locationPoint); drawAxis(g); drawPoleLabels(g); drawCrosshair(g); renderSyncPanel(); updateReadouts(params); }
+// 文本格式化：角度、经纬度、时间、时长和方位文字统一在这里处理。
+function formatDegMin(v, signed = true) { const sign = v < -1e-5 ? "-" : ""; let a = Math.abs(v), d = Math.floor(a), m = Math.round((a - d) * 60); if (m === 60) {
+    d++;
+    m = 0;
+} return (signed ? sign : "") + d + "°" + m + "′"; }
+function formatHemDegMin(v, pos, neg) { let a = Math.abs(v), d = Math.floor(a), m = Math.round((a - d) * 60); if (m === 60) {
+    d++;
+    m = 0;
+} const hemi = Math.abs(v) < 1e-5 ? "" : (v > 0 ? pos : neg); return d + "°" + m + "′" + hemi; }
+function formatDuration(v) { if (!Number.isFinite(v))
+    return "—"; v = Math.max(0, Math.min(24, v)); let h = Math.floor(v), m = Math.round((v - h) * 60); if (m === 60) {
+    h++;
+    m = 0;
+} return h + "时" + m + "分"; }
+function formatHour(v) { if (!Number.isFinite(v))
+    return "—"; v = ((v % 24) + 24) % 24; let h = Math.floor(v), m = Math.round((v - h) * 60); if (m === 60) {
+    h = (h + 1) % 24;
+    m = 0;
+} return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0"); }
+function formatAzimuth(az, reason) { if (!Number.isFinite(az))
+    return reason || "—"; az = ((az % 360) + 360) % 360; const eps = 1e-7; if (Math.abs(az) <= eps || Math.abs(az - 360) <= eps)
+    return "正北"; if (Math.abs(az - 90) <= eps)
+    return "正东"; if (Math.abs(az - 180) <= eps)
+    return "正南"; if (Math.abs(az - 270) <= eps)
+    return "正西"; if (az < 90)
+    return "北偏东" + formatDegMin(clamp(az, 0, 90), false); if (az < 180)
+    return "南偏东" + formatDegMin(clamp(180 - az, 0, 90), false); if (az < 270)
+    return "南偏西" + formatDegMin(clamp(az - 180, 0, 90), false); return "北偏西" + formatDegMin(clamp(360 - az, 0, 90), false); }
+// 给定纬度、太阳赤纬、时角，计算太阳高度角和方位角。
+function solarAt(latDeg, declRad, hourAngleDeg) { const lat = latDeg * DEG, H = hourAngleDeg * DEG, sinAlt = Math.sin(lat) * Math.sin(declRad) + Math.cos(lat) * Math.cos(declRad) * Math.cos(H), alt = Math.asin(clamp(sinAlt, -1, 1)), cosAlt = Math.cos(alt); let az, azText; if (Math.abs(cosAlt) < 1e-7) {
+    az = NaN;
+    azText = "—";
+}
+else {
+    az = (Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(lat) - Math.tan(declRad) * Math.cos(lat)) * RAD + 180 + 360) % 360;
+    azText = formatAzimuth(az);
+} return { altitude: alt * RAD, azimuth: az, azText }; }
+// 信息模块核心：基于当前光照参数计算昼夜长短、日出日落、正午/午夜太阳状态。
+function computeLightInfo(p) { const lat = p.lat, decl = p.decl, t = p.localTime, Hcur = 15 * (t - 12), current = solarAt(lat, decl, Hcur), noon = solarAt(lat, decl, 0), midnight = solarAt(lat, decl, 180), latRad = lat * DEG, cosH0 = -Math.tan(latRad) * Math.tan(decl); let dayLength, nightLength, sunrise, sunset, sunriseTime, sunsetTime, condition; if (cosH0 < -1) {
+    dayLength = 24;
+    nightLength = 0;
+    condition = INFO_TEXT_POOL.conditions.polarDay;
+}
+else if (cosH0 > 1) {
+    dayLength = 0;
+    nightLength = 24;
+    condition = INFO_TEXT_POOL.conditions.polarNight;
+}
+else {
+    const H0 = Math.acos(clamp(cosH0, -1, 1)) * RAD;
+    dayLength = 2 * H0 / 15;
+    nightLength = 24 - dayLength;
+    sunriseTime = 12 - H0 / 15;
+    sunsetTime = 12 + H0 / 15;
+    sunrise = solarAt(lat, decl, -H0);
+    sunset = solarAt(lat, decl, H0);
+    condition = INFO_TEXT_POOL.conditions.normal;
+} return { dayLength, nightLength, current, noon, midnight, sunrise, sunset, sunriseTime, sunsetTime, condition }; }
+function updateReadouts(params) { const x = Math.round(normalizeRad(state.rotation.x) * RAD), y = Math.round(normalizeRad(state.rotation.y) * RAD), z = Math.round(normalizeRad(state.rotation.z) * RAD); dom.rotationReadout.textContent = `x ${x}° / y ${y}° / z ${z}°`; dom.zValue.textContent = `${z}°`; const check = validateInputs(), disabled = !check.valid; document.querySelectorAll(".light-option,.light-tri").forEach(el => el.disabled = disabled); if (disabled) {
+    dom.lightStatus.textContent = "光照参数不合法：请检查经纬度、日期和地方时。";
+    dom.lightStatus.classList.remove("calculate");
+    dom.lightStatus.classList.add("invalid");
+    dom.infoPanel.classList.add("calculate");
+    return;
+} dom.lightStatus.textContent = ""; dom.lightStatus.classList.add("calculate"); dom.lightStatus.classList.remove("invalid"); dom.infoPanel.classList.remove("calculate"); updateInfoPanel(params || getLightParams()); }
+function schoolSunDirections(latDeg, declRad, info) { const declDeg = declRad * RAD, absLat = Math.abs(latDeg), eps = 1e-4, isNorthPole = Math.abs(latDeg - 90) < 1e-4, isSouthPole = Math.abs(latDeg + 90) < 1e-4, isPolarDay = info.dayLength >= 23.999, isPolarNight = info.dayLength <= .001, northText = "北偏东0°", southText = "南偏东0°"; if (isPolarNight)
+    return { sunrise: "—", sunset: "—" }; if (isPolarDay) {
+    if (declDeg > eps && latDeg > 0) {
+        const dir = isNorthPole ? southText : northText;
+        return { sunrise: dir, sunset: dir };
+    }
+    if (declDeg < -eps && latDeg < 0) {
+        const dir = isSouthPole ? northText : southText;
+        return { sunrise: dir, sunset: dir };
+    }
+    return { sunrise: "—", sunset: "—" };
+} if (Math.abs(declDeg) < eps && absLat >= 90 - 1e-4)
+    return { sunrise: "—", sunset: "—" }; return { sunrise: info.sunrise ? formatAzimuth(info.sunrise.azimuth) : "—", sunset: info.sunset ? formatAzimuth(info.sunset.azimuth) : "—" }; }
+// 信息面板渲染：读取 INFO_TEXT_POOL，拼出摘要区和表格区。
+function updateInfoPanel(p) { if (!p)
+    return; const info = computeLightInfo(p), currentTime = formatHour(p.localTime), schoolDir = schoolSunDirections(p.lat, p.decl, info); const sunriseAz = schoolDir.sunrise, sunsetAz = schoolDir.sunset, T = INFO_TEXT_POOL, subsolarPoint = `${formatHemDegMin(p.decl * RAD, "N", "S")} ${formatHemDegMin(p.subsolarLon, "E", "W")}`; const summary = [[T.summary.dayNightLength, `${T.summary.dayLengthPrefix}${formatDuration(info.dayLength)}${T.summary.dayNightSeparator}${T.summary.nightLengthPrefix}${formatDuration(info.nightLength)}`], [T.summary.dayNightCondition, info.condition], [T.summary.subsolarPoint, subsolarPoint]]; const rows = [[T.rows.current, currentTime, formatDegMin(Math.abs(info.current.altitude), false), info.current.azText], [T.rows.sunrise, info.sunrise ? formatHour(info.sunriseTime) : T.empty, info.sunrise ? formatDegMin(Math.abs(info.sunrise.altitude), false) : T.empty, sunriseAz], [T.rows.noon, "12:00", formatDegMin(Math.abs(info.noon.altitude), false), info.noon.azText], [T.rows.sunset, info.sunset ? formatHour(info.sunsetTime) : T.empty, info.sunset ? formatDegMin(Math.abs(info.sunset.altitude), false) : T.empty, sunsetAz], [T.rows.midnight, "00:00", formatDegMin(Math.abs(info.midnight.altitude), false), info.midnight.azText]]; dom.infoGrid.innerHTML = `<div class="summary-info">${summary.map(([k, v]) => `<div><strong>${k}</strong><span>${v}</span></div>`).join('')}</div><table class="solar-table"><thead><tr><th>${T.table.marker}</th><th>${T.table.time}</th><th>${T.table.altitude}</th><th>${T.table.direction}</th></tr></thead><tbody>${rows.map(r => `<tr><th>${r[0]}</th><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join('')}</tbody></table>`; }
+// 三挡/二挡开关：三挡用于隐藏/正面/透视，二挡用于隐藏/透视或隐藏/正面。
+function renderTriButton(btn, value) { btn.innerHTML = TRI_LABELS.map((t, i) => `<span class="tri-state${i === value ? ' on' : ''}">${t}</span>`).join(""); btn.classList.toggle("active", value !== 0); }
+const THROUGH_IMAGE_STORAGE_06 = "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";
+function cycleTriButton(btn, target, key) { target[key] = (target[key] + 1) % 3; renderTriButton(btn, target[key]); render(); }
+function renderBinaryButton(btn, on, onLabel = "透视") {
+    if (!btn)
+        return;
+    const labels = ["隐藏", onLabel];
+    btn.innerHTML = labels.map((t, i) => `<span class="duo-state${(i === 1) === !!on ? ' on' : ''}">${t}</span>`).join("");
+    btn.classList.remove("active");
+}
+function toggleBinaryButton(btn, target, key, onLabel = "透视") {
+    target[key] = !target[key];
+    renderBinaryButton(btn, target[key], onLabel);
+    render();
+}
+function initBinaryButtons() {
+    renderBinaryButton(dom.showAxis, state.style.axis, "透视");
+    renderBinaryButton(dom.showSpin, state.style.spin, "透视");
+    renderBinaryButton(dom.showSunRay, state.light.sunRay, "透视");
+    renderBinaryButton(dom.showShadow, state.light.shadow, "正面");
+}
+function initTriButtons() { document.querySelectorAll("button[data-key]").forEach(b => renderTriButton(b, state.style[b.dataset.key] || 0)); document.querySelectorAll("button[data-light-key]").forEach(b => renderTriButton(b, state.light[b.dataset.lightKey] || 0)); initBinaryButtons(); }
+// 时间、日期和自动播放控制。
+function syncTimeSliderFromInputs() { const h = clamp(intOrNaN(dom.hourInput) || 0, 0, 23); dom.timeSlider.value = String(h); }
+function setTimeFromMinutes(totalMinutes) { const n = ((Math.round(totalMinutes) % 1440) + 1440) % 1440, h = Math.floor(n / 60), m = n % 60; dom.hourInput.value = String(h).padStart(2, "0"); dom.minuteInput.value = String(m).padStart(2, "0"); dom.timeSlider.value = String(h); }
+function setHourFromSlider() { const h = clamp(Math.round(Number(dom.timeSlider.value) || 0), 0, 23); dom.hourInput.value = String(h).padStart(2, "0"); }
+function currentTotalMinutes() { const h = clamp(intOrNaN(dom.hourInput) || 0, 0, 23), m = clamp(intOrNaN(dom.minuteInput) || 0, 0, 59); return h * 60 + m; }
+function correctAllLightInputs() { let latD = correctInput(dom.latDeg, 0, 90, 0), latMax = latD === 90 ? 0 : 59; correctInput(dom.latMin, 0, latMax, 0); let lonD = correctInput(dom.lonDeg, 0, 180, 0), lonMax = lonD === 180 ? 0 : 59; correctInput(dom.lonMin, 0, lonMax, 0); const m = correctInput(dom.monthInput, 1, 12, 3); correctInput(dom.dayInput, 1, MONTH_DAYS[m - 1], Math.min(21, MONTH_DAYS[m - 1])); const h = correctInput(dom.hourInput, 0, 23, 12, true); correctInput(dom.minuteInput, 0, 59, 0, true); dom.timeSlider.value = String(h); }
+function setDateFromDayNumber(dayNumber) { let n = ((Math.floor(dayNumber) - 1) % 365 + 365) % 365 + 1, m = 1, d = n; while (d > MONTH_DAYS[m - 1]) {
+    d -= MONTH_DAYS[m - 1];
+    m++;
+} dom.monthInput.value = String(m); dom.dayInput.value = String(d); }
+function currentDayNumber() { const m = clamp(intOrNaN(dom.monthInput) || 3, 1, 12), d = clamp(intOrNaN(dom.dayInput) || 1, 1, MONTH_DAYS[m - 1]); return dayOfYear(m, d); }
+function formatDaySpeed(v) { const n = Math.round(Number(v) || 1); if (n >= 720)
+    return "12小时/s"; const h = Math.floor(n / 60), m = n % 60; if (h && m)
+    return `${h}小时${m}分钟/s`; if (h)
+    return `${h}小时/s`; return `${n}分钟/s`; }
+function formatYearSpeed(v) { const n = Math.round(Number(v) || 1); return n >= 183 ? "半年/s" : `${n}天/s`; }
+function syncAutoSpeedLabels() { dom.daySpeedValue.textContent = formatDaySpeed(dom.daySpeedSlider.value); dom.yearSpeedValue.textContent = formatYearSpeed(dom.yearSpeedSlider.value); }
+function lockTimeInputs(locked) { [dom.timeSlider, dom.hourInput, dom.minuteInput].forEach(el => el.disabled = locked); }
+function lockDateInputs(locked) { [dom.monthInput, dom.dayInput].forEach(el => el.disabled = locked); document.querySelectorAll(".season-btn").forEach(btn => btn.disabled = locked); }
+function hasAutoPlaying() { return state.auto.dayPlaying || state.auto.yearPlaying; }
+function ensureAutoLoop() { if (!state.auto.raf)
+    state.auto.raf = requestAnimationFrame(autoTick); }
+function clearAutoLoop() { if (state.auto.raf) {
+    cancelAnimationFrame(state.auto.raf);
+    state.auto.raf = 0;
+} state.auto.lastFrameTs = null; }
+function stopDayPlayback() { state.auto.dayPlaying = false; state.auto.dayLastTs = null; lockTimeInputs(false); dom.dayPlayBtn.textContent = "播放"; dom.dayPlayBtn.classList.remove("active"); }
+function stopYearPlayback() { state.auto.yearPlaying = false; state.auto.yearLastTs = null; lockDateInputs(false); dom.yearPlayBtn.textContent = "播放"; dom.yearPlayBtn.classList.remove("active"); }
+function startDayPlayback() { if (state.auto.yearPlaying)
+    stopYearPlayback(); correctAllLightInputs(); state.auto.dayMinute = currentTotalMinutes(); state.auto.dayPlaying = true; state.auto.dayLastTs = null; state.auto.lastFrameTs = null; lockTimeInputs(true); dom.dayPlayBtn.textContent = "暂停"; dom.dayPlayBtn.classList.add("active"); ensureAutoLoop(); render(); }
+function startYearPlayback() { if (state.auto.dayPlaying)
+    stopDayPlayback(); correctAllLightInputs(); state.auto.yearDay = currentDayNumber(); state.auto.yearPlaying = true; state.auto.yearLastTs = null; state.auto.lastFrameTs = null; lockDateInputs(true); dom.yearPlayBtn.textContent = "暂停"; dom.yearPlayBtn.classList.add("active"); ensureAutoLoop(); render(); }
+function toggleDayPlayback() { state.auto.dayPlaying ? stopDayPlayback() : startDayPlayback(); if (!hasAutoPlaying())
+    clearAutoLoop(); }
+function toggleYearPlayback() { state.auto.yearPlaying ? stopYearPlayback() : startYearPlayback(); if (!hasAutoPlaying())
+    clearAutoLoop(); }
+function autoTick(ts) { state.auto.raf = 0; if (!hasAutoPlaying()) {
+    state.auto.lastFrameTs = null;
+    return;
+} if (state.auto.lastFrameTs != null && ts - state.auto.lastFrameTs < state.auto.frameMs) {
+    ensureAutoLoop();
+    return;
+} state.auto.lastFrameTs = ts; if (state.auto.dayPlaying) {
+    if (state.auto.dayLastTs == null)
+        state.auto.dayLastTs = ts;
+    const dt = (ts - state.auto.dayLastTs) / 1000;
+    state.auto.dayLastTs = ts;
+    const rate = Number(dom.daySpeedSlider.value) || 1, deltaMinutes = dt * rate;
+    state.auto.dayMinute = (state.auto.dayMinute + deltaMinutes) % 1440;
+    if (state.auto.spinEarth)
+        state.rotation.x += deltaMinutes / 1440 * Math.PI * 2;
+    setTimeFromMinutes(state.auto.dayMinute);
+} if (state.auto.yearPlaying) {
+    if (state.auto.yearLastTs == null)
+        state.auto.yearLastTs = ts;
+    const dt = (ts - state.auto.yearLastTs) / 1000;
+    state.auto.yearLastTs = ts;
+    const rate = Number(dom.yearSpeedSlider.value) || 1;
+    state.auto.yearDay += dt * rate;
+    while (state.auto.yearDay > 365)
+        state.auto.yearDay -= 365;
+    setDateFromDayNumber(state.auto.yearDay);
+} render(); ensureAutoLoop(); }
+function applyCenterCoordinateToInputs() { const geo = vecToGeo(rotateViewToGeo({ x: 0, y: 0, z: 1 })), latAbs = Math.abs(geo.lat), lonAbs = Math.abs(geo.lon); let latD = Math.floor(latAbs), latM = Math.round((latAbs - latD) * 60); if (latM === 60) {
+    latD++;
+    latM = 0;
+} let lonD = Math.floor(lonAbs), lonM = Math.round((lonAbs - lonD) * 60); if (lonM === 60) {
+    lonD++;
+    lonM = 0;
+} if (latD === 90)
+    latM = 0; if (lonD === 180)
+    lonM = 0; dom.latDeg.value = String(clamp(latD, 0, 90)); dom.latMin.value = String(latM); state.light.latHem = geo.lat < -1e-4 ? "S" : "N"; dom.latHem.textContent = state.light.latHem; dom.lonDeg.value = String(clamp(lonD, 0, 180)); dom.lonMin.value = String(lonM); state.light.lonHem = geo.lon < -1e-4 ? "W" : "E"; dom.lonHem.textContent = state.light.lonHem; correctAllLightInputs(); }
+function setBoxSize(value, source) { const size = clamp(Math.round(Number(value) || state.box.size), 100, 1000); state.box.size = size; state.box.w = size; state.box.h = size; if (source !== "slider")
+    dom.boxSizeSlider.value = String(size); if (source !== "input")
+    dom.boxSize.value = String(size); render(); }
+// 主事件绑定：样式开关、输入框、拖拽旋转、定位、播放按钮等都在这里接线。
+function bindEvents() { dom.showAxis.addEventListener("click", () => toggleBinaryButton(dom.showAxis, state.style, "axis", "透视")); dom.showSpin.addEventListener("click", () => toggleBinaryButton(dom.showSpin, state.style, "spin", "透视")); document.querySelectorAll("button[data-key]").forEach(btn => btn.addEventListener("click", () => cycleTriButton(btn, state.style, btn.dataset.key))); document.querySelectorAll("button[data-light-key]").forEach(btn => btn.addEventListener("click", () => cycleTriButton(btn, state.light, btn.dataset.lightKey))); dom.showSunRay.addEventListener("click", () => toggleBinaryButton(dom.showSunRay, state.light, "sunRay", "透视")); dom.showShadow.addEventListener("click", () => toggleBinaryButton(dom.showShadow, state.light, "shadow", "正面")); dom.boxSizeSlider.addEventListener("input", () => setBoxSize(dom.boxSizeSlider.value, "slider")); dom.boxSize.addEventListener("input", () => setBoxSize(dom.boxSize.value, "input")); dom.boxSize.addEventListener("blur", () => setBoxSize(dom.boxSize.value, "both")); dom.resetView.addEventListener("click", () => { state.rotation.x = 0; state.rotation.y = 0; state.rotation.z = 0; dom.zSlider.value = "0"; checkCalculateResetClick(); render(); }); dom.zSlider.addEventListener("input", () => { state.rotation.z = normalizeRad(Number(dom.zSlider.value) * DEG); render(); }); dom.latHem.addEventListener("click", () => { state.light.latHem = state.light.latHem === "N" ? "S" : "N"; dom.latHem.textContent = state.light.latHem; render(); }); dom.lonHem.addEventListener("click", () => { state.light.lonHem = state.light.lonHem === "E" ? "W" : "E"; dom.lonHem.textContent = state.light.lonHem; render(); }); document.querySelectorAll(".geo-input,.light-input").forEach(input => { input.addEventListener("input", () => { if (input === dom.hourInput || input === dom.minuteInput)
+    syncTimeSliderFromInputs(); render(); }); input.addEventListener("blur", () => { correctAllLightInputs(); render(); }); }); dom.timeSlider.addEventListener("input", () => { setHourFromSlider(); render(); }); document.querySelectorAll(".season-btn").forEach(btn => btn.addEventListener("click", () => { dom.monthInput.value = btn.dataset.month; dom.dayInput.value = btn.dataset.day; correctAllLightInputs(); render(); })); dom.daySpinEarth.addEventListener("change", () => { state.auto.spinEarth = dom.daySpinEarth.checked; }); dom.daySpeedSlider.addEventListener("input", syncAutoSpeedLabels); dom.yearSpeedSlider.addEventListener("input", syncAutoSpeedLabels); dom.dayPlayBtn.addEventListener("click", toggleDayPlayback); dom.yearPlayBtn.addEventListener("click", toggleYearPlayback); dom.locateBtn.addEventListener("click", () => { if (!state.locating) {
+    state.locating = true;
+    dom.locateBtn.textContent = "读取中心坐标";
+    dom.locateBtn.classList.add("active");
+}
+else {
+    applyCenterCoordinateToInputs();
+    state.locating = false;
+    dom.locateBtn.textContent = "定位";
+    dom.locateBtn.classList.remove("active");
+} render(); }); let dragging = false, lastX = 0, lastY = 0; dom.canvas.addEventListener("pointerdown", e => { dragging = true; lastX = e.clientX; lastY = e.clientY; dom.canvas.setPointerCapture(e.pointerId); }); dom.canvas.addEventListener("pointermove", e => { if (!dragging)
+    return; const dx = e.clientX - lastX, dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; state.rotation.x += dx * .008; state.rotation.y += dy * .008; render(); }); function stopDrag(e) { dragging = false; try {
+    dom.canvas.releasePointerCapture(e.pointerId);
+}
+catch (_) { } } dom.canvas.addEventListener("pointerup", stopDrag); dom.canvas.addEventListener("pointercancel", stopDrag); let motionDragging = false, motionLastX = 0; if (dom.syncMotionCanvas) {
+    dom.syncMotionCanvas.addEventListener("pointerdown", e => { motionDragging = true; motionLastX = e.clientX; dom.syncMotionCanvas.setPointerCapture(e.pointerId); });
+    dom.syncMotionCanvas.addEventListener("pointermove", e => { if (!motionDragging)
+        return; const dx = e.clientX - motionLastX; motionLastX = e.clientX; state.sync.motionRot += dx * .01; renderSyncPanel(); });
+    function stopMotionDrag(e) { motionDragging = false; try {
+        dom.syncMotionCanvas.releasePointerCapture(e.pointerId);
+    }
+    catch (_) { } }
+    dom.syncMotionCanvas.addEventListener("pointerup", stopMotionDrag);
+    dom.syncMotionCanvas.addEventListener("pointercancel", stopMotionDrag);
+} window.addEventListener("resize", () => { applyPageAndColumnLayout(); }); }
+function syncDefaultCheckboxes() { initBinaryButtons(); dom.daySpinEarth.checked = state.auto.spinEarth; }
+const THROUGH_IMAGE_STORAGE_07 = "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";
+// 小工具：时区换算和经度地方时换算。
+const TOOL_ZONE_OFFSETS = Array.from({ length: 25 }, (_, i) => i - 12);
+const TOOL_CN_NUM = { 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "七", 8: "八", 9: "九", 10: "十", 11: "十一", 12: "十二" };
+function toolZoneName(offset) { if (offset < 0)
+    return "西" + TOOL_CN_NUM[Math.abs(offset)] + "区"; if (offset > 0)
+    return "东" + TOOL_CN_NUM[offset] + "区"; return "中时区"; }
+function toolUtcText(offset) { return offset < 0 ? "UTC−" + Math.abs(offset) : "UTC+" + offset; }
+function toolEls() { return { modeBtn: document.getElementById("toolModeBtn"), zoneTool: document.getElementById("zoneTool"), longitudeTool: document.getElementById("longitudeTool"), zoneSelect: document.getElementById("zoneSelect"), zoneHour: document.getElementById("zoneHour"), zoneMinute: document.getElementById("zoneMinute"), zoneSecond: document.getElementById("zoneSecond"), zoneResult: document.getElementById("zoneResult"), sourceLonDeg: document.getElementById("sourceLonDeg"), sourceLonMin: document.getElementById("sourceLonMin"), sourceLonHem: document.getElementById("sourceLonHem"), lonHour: document.getElementById("lonHour"), lonMinute: document.getElementById("lonMinute"), lonSecond: document.getElementById("lonSecond"), targetLonDeg: document.getElementById("targetLonDeg"), targetLonMin: document.getElementById("targetLonMin"), targetLonHem: document.getElementById("targetLonHem"), longitudeResult: document.getElementById("longitudeResult") }; }
+function toolReadInt(el) { return /^\s*\d+\s*$/.test(el.value) ? parseInt(el.value, 10) : NaN; }
+function toolReadTime(hEl, mEl, sEl) { const h = toolReadInt(hEl), m = toolReadInt(mEl), s = toolReadInt(sEl); if (!Number.isFinite(h) || h < 0 || h > 23 || !Number.isFinite(m) || m < 0 || m > 59 || !Number.isFinite(s) || s < 0 || s > 59)
+    return null; return h * 3600 + m * 60 + s; }
+function toolCorrectTime(hEl, mEl, sEl) { correctInput(hEl, 0, 23, 12, true); correctInput(mEl, 0, 59, 0, true); correctInput(sEl, 0, 59, 0, true); }
+function toolCorrectLongitude(degEl, minEl) { const d = correctInput(degEl, 0, 180, 0); correctInput(minEl, 0, d === 180 ? 0 : 59, 0); }
+function toolReadLongitude(degEl, minEl, hem) { const d = toolReadInt(degEl), m = toolReadInt(minEl); if (!Number.isFinite(d) || d < 0 || d > 180 || !Number.isFinite(m) || m < 0 || m > 59 || (d === 180 && m > 0))
+    return null; let v = d + m / 60; if (hem === "W")
+    v = -v; return v; }
+function toolFormatTime(totalSeconds) { const rounded = Math.round(totalSeconds), dayShift = Math.floor(rounded / 86400), wrapped = ((rounded % 86400) + 86400) % 86400, h = Math.floor(wrapped / 3600), m = Math.floor((wrapped % 3600) / 60), s = wrapped % 60, mark = dayShift < 0 ? "昨日" : dayShift > 0 ? "次日" : ""; return (mark ? mark : "") + String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0"); }
+function updateZoneTool() { const e = toolEls(), base = toolReadTime(e.zoneHour, e.zoneMinute, e.zoneSecond); if (base == null) {
+    e.zoneResult.innerHTML = '<div class="tool-invalid">请输入有效时间。</div>';
+    return;
+} const srcOffset = parseInt(e.zoneSelect.value, 10) || 0; e.zoneResult.innerHTML = TOOL_ZONE_OFFSETS.map(offset => { const t = base + (offset - srcOffset) * 3600; return `<div class="tool-time-row"><strong>${toolZoneName(offset)}\t${toolUtcText(offset)}</strong><span>${toolFormatTime(t)}</span></div>`; }).join(""); }
+function updateLongitudeTool() { const e = toolEls(), base = toolReadTime(e.lonHour, e.lonMinute, e.lonSecond), src = toolReadLongitude(e.sourceLonDeg, e.sourceLonMin, e.sourceLonHem.textContent), target = toolReadLongitude(e.targetLonDeg, e.targetLonMin, e.targetLonHem.textContent); if (base == null || src == null || target == null) {
+    e.longitudeResult.textContent = "请输入有效信息。";
+    e.longitudeResult.classList.add("tool-invalid");
+    return;
+} const deltaSeconds = (target - src) * 240; e.longitudeResult.textContent = toolFormatTime(base + deltaSeconds); e.longitudeResult.classList.remove("tool-invalid"); }
+function setToolMode(mode) { const e = toolEls(), isZone = mode !== "longitude"; e.zoneTool.classList.toggle("calculate", !isZone); e.longitudeTool.classList.toggle("calculate", isZone); e.modeBtn.querySelectorAll(".duo-state").forEach(span => span.classList.toggle("on", span.dataset.toolMode === (isZone ? "zone" : "longitude"))); if (isZone)
+    updateZoneTool();
+else
+    updateLongitudeTool(); }
+// 三栏布局与自定义页面大小：自定义启用时按输入尺寸/缩放比例换算为 CSS 视口；否则读取浏览器视口。宽度小于 800 为单栏，其余固定三栏。
+function viewportSize() { return { w: window.innerWidth || document.documentElement.clientWidth || 1920, h: window.innerHeight || document.documentElement.clientHeight || 1080, scale: window.devicePixelRatio || 1 }; }
+const THROUGH_IMAGE_STORAGE_08 = "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";
+function currentAppSize() { const vp = viewportSize(); if (!state.page.custom) return vp; const scale = clamp(parseFloat(state.page.scale) || 1, .1, 10); return { w: clamp((parseInt(state.page.width, 10) || vp.w) / scale, 320, 10000), h: clamp((parseInt(state.page.height, 10) || vp.h) / scale, 360, 10000), scale }; }
+function layoutMode() { const s = currentAppSize(); return s.w < 800 ? "one" : "three"; }
+function normalizeColumnWidths(total, arr, n) { if (!arr || arr.length !== n) {
+    return Array(n).fill(total / n);
+} let sum = arr.reduce((a, b) => a + b, 0) || 1, scaled = arr.map(v => v / sum * total), min = n === 3 ? 220 : 240; let changed = true; while (changed) {
+    changed = false;
+    let fixed = 0, free = [];
+    scaled.forEach((v, i) => { if (v < min) {
+        scaled[i] = min;
+        fixed += min;
+        changed = true;
+    }
+    else
+        free.push(i); });
+    if (changed && free.length) {
+        const remain = Math.max(min * free.length, total - fixed), freeSum = free.reduce((a, i) => a + arr[i], 0) || 1;
+        for (const i of free)
+            scaled[i] = arr[i] / freeSum * remain;
+    }
+} return scaled; }
+function applyPageAndColumnLayout() {
+    const app = dom.app;
+    if (!app)
+        return;
+    const s = currentAppSize();
+    app.style.width = s.w + "px";
+    app.style.height = s.h + "px";
+    document.body.classList.toggle("custom-page", !!state.page.custom);
+    const mode = layoutMode();
+    app.classList.toggle("layout-three", mode === "three");
+    app.classList.remove("layout-two");
+    app.classList.toggle("layout-one", mode === "one");
+    if (mode === "three") {
+        const total = Math.max(660, s.w - 16), cols = normalizeColumnWidths(total, state.layout.cols, 3);
+        state.layout.cols = cols;
+        app.style.display = "grid";
+        app.style.gridTemplateColumns = `${cols[0]}px 8px ${cols[1]}px 8px ${cols[2]}px`;
+        app.style.gridTemplateRows = "minmax(0,1fr)";
+    }
+    else {
+        app.style.gridTemplateColumns = "1fr";
+        app.style.gridTemplateRows = "auto";
+    }
+    setTimeout(() => { render(); }, 0);
+}
+function bindColumnResizers() { document.querySelectorAll(".col-resizer").forEach(res => { res.addEventListener("pointerdown", ev => { ev.preventDefault(); const mode = layoutMode(); if (mode === "one")
+    return; res.setPointerCapture(ev.pointerId); res.classList.add("dragging"); const startX = ev.clientX; const base = (mode === "three" ? (state.layout.cols || normalizeColumnWidths((currentAppSize().w - 16), null, 3)) : (state.layout.twoCols || normalizeColumnWidths((currentAppSize().w - 8), null, 2))).slice(); state.layout.drag = { res: res.dataset.resizer, mode, startX, base }; }); res.addEventListener("pointermove", ev => { const d = state.layout.drag; if (!d)
+    return; const dx = ev.clientX - d.startX, min = 160; if (d.mode === "three") {
+    let cols = d.base.slice();
+    if (d.res === "left") {
+        const sum = cols[0] + cols[1];
+        cols[0] = clamp(d.base[0] + dx, min, sum - min);
+        cols[1] = sum - cols[0];
+    }
+    else {
+        const sum = cols[1] + cols[2];
+        cols[1] = clamp(d.base[1] + dx, min, sum - min);
+        cols[2] = sum - cols[1];
+    }
+    state.layout.cols = cols;
+}
+else if (d.mode === "two") {
+    let cols = d.base.slice(), sum = cols[0] + cols[1];
+    cols[0] = clamp(d.base[0] + dx, min, sum - min);
+    cols[1] = sum - cols[0];
+    state.layout.twoCols = cols;
+} applyPageAndColumnLayout(); }); function stop(ev) { if (!state.layout.drag)
+    return; state.layout.drag = null; document.querySelectorAll(".col-resizer").forEach(r => r.classList.remove("dragging")); try {
+    res.releasePointerCapture(ev.pointerId);
+}
+catch (_) { } } res.addEventListener("pointerup", stop); res.addEventListener("pointercancel", stop); }); }
+function bindCustomPageTool() {
+    if (!dom.customPageEnable)
+        return;
+    const applyBtn = document.getElementById("customPageApply"), resetBtn = document.getElementById("customPageReset");
+    const vp = viewportSize();
+    if (dom.customPageScale && (!dom.customPageScale.value || dom.customPageScale.value === "1"))
+        dom.customPageScale.value = String(+(vp.scale || 1).toFixed(2));
+    function correctScaleInput(el, fallback = 1) {
+        let v = parseFloat(String(el.value || "").replace(/[^0-9.]/g, ""));
+        if (!Number.isFinite(v) || v <= 0)
+            v = fallback;
+        v = clamp(v, .1, 10);
+        el.value = String(+v.toFixed(3));
+        return v;
+    }
+    function readInputs() {
+        const w = correctInput(dom.customPageWidth, 320, 10000, state.page.width || 1920), h = correctInput(dom.customPageHeight, 360, 10000, state.page.height || 1080), scale = dom.customPageScale ? correctScaleInput(dom.customPageScale, state.page.scale || viewportSize().scale || 1) : 1;
+        state.page.width = w;
+        state.page.height = h;
+        state.page.scale = scale;
+    }
+    function applySize() {
+        if (!dom.customPageEnable.checked)
+            return;
+        readInputs();
+        state.page.custom = true;
+        applyPageAndColumnLayout();
+    }
+    function resetSize() {
+        const vp = viewportSize();
+        state.page.custom = false;
+        state.page.width = vp.w;
+        state.page.height = vp.h;
+        state.page.scale = vp.scale || 1;
+        dom.customPageEnable.checked = false;
+        dom.customPageWidth.value = String(vp.w);
+        dom.customPageHeight.value = String(vp.h);
+        if (dom.customPageScale) dom.customPageScale.value = String(+(state.page.scale).toFixed(2));
+        applyPageAndColumnLayout();
+    }
+    // 勾选框只表示“准备启用自定义尺寸”，不直接触发布局变化；唯一启用入口是勾选后点击“应用”。
+    dom.customPageEnable.addEventListener("change", () => {});
+    if (applyBtn)
+        applyBtn.addEventListener("click", applySize);
+    if (resetBtn)
+        resetBtn.addEventListener("click", resetSize);
+    [dom.customPageWidth, dom.customPageHeight].forEach(el => { el.addEventListener("blur", () => correctInput(el, el === dom.customPageWidth ? 320 : 360, 10000, el === dom.customPageWidth ? (state.page.width || 1920) : (state.page.height || 1080))); });
+    if (dom.customPageScale) dom.customPageScale.addEventListener("blur", () => correctScaleInput(dom.customPageScale, state.page.scale || viewportSize().scale || 1));
+    applyPageAndColumnLayout();
+}
+// 角度格式转换：度分和小数度互转，失焦时进行纠错。
+function bindAngleTool() {
+    const a = [dom.angleDeg, dom.angleMin, dom.angleDecInt, dom.angleDecFrac];
+    if (a.some(x => !x))
+        return;
+    let lock = false;
+    function readUnsignedNumber(el) {
+        const raw = String(el.value || "").trim();
+        return raw === "" ? NaN : Number(raw);
+    }
+    function readFracValue(el) {
+        const raw = String(el.value || "").trim();
+        if (raw === "")
+            return 0;
+        if (!/^\d+$/.test(raw))
+            return NaN;
+        return parseInt(raw, 10) / Math.pow(10, raw.length);
+    }
+    function updateDecFromDM(correctCurrentSide) {
+        if (lock)
+            return;
+        lock = true;
+        let d, m;
+        if (correctCurrentSide) {
+            d = correctInput(dom.angleDeg, 0, 360, 0);
+            m = correctInput(dom.angleMin, 0, 59, 0);
+        }
+        else {
+            d = readUnsignedNumber(dom.angleDeg);
+            m = readUnsignedNumber(dom.angleMin);
+            if (!Number.isFinite(d) || !Number.isFinite(m)) {
+                lock = false;
+                return;
+            }
+        }
+        const dec = clamp(d + m / 60, 0, 360);
+        let di = Math.floor(dec), frac = Math.round((dec - di) * 1000000);
+        if (frac >= 1000000) {
+            di++;
+            frac = 0;
+        }
+        dom.angleDecInt.value = String(clamp(di, 0, 360));
+        dom.angleDecFrac.value = String(frac).padStart(6, "0");
+        lock = false;
+    }
+    function updateDMFromDec(correctCurrentSide) {
+        if (lock)
+            return;
+        lock = true;
+        let di, frac;
+        if (correctCurrentSide) {
+            di = correctInput(dom.angleDecInt, 0, 360, 0);
+            let fs = String(dom.angleDecFrac.value || "").replace(/\D/g, "").slice(0, 6);
+            dom.angleDecFrac.value = fs.padEnd(1, "0");
+            frac = parseInt(fs || "0", 10) / Math.pow(10, fs.length || 1);
+        }
+        else {
+            di = readUnsignedNumber(dom.angleDecInt);
+            frac = readFracValue(dom.angleDecFrac);
+            if (!Number.isFinite(di) || !Number.isFinite(frac)) {
+                lock = false;
+                return;
+            }
+        }
+        const dec = clamp(di + frac, 0, 360);
+        let d = Math.floor(dec), m = Math.round((dec - d) * 60);
+        if (m === 60) {
+            d++;
+            m = 0;
+        }
+        dom.angleDeg.value = String(clamp(d, 0, 360));
+        dom.angleMin.value = String(clamp(m, 0, 59));
+        lock = false;
+    }
+    dom.angleDeg.addEventListener("input", () => updateDecFromDM(false));
+    dom.angleMin.addEventListener("input", () => updateDecFromDM(false));
+    dom.angleDeg.addEventListener("blur", () => updateDecFromDM(true));
+    dom.angleMin.addEventListener("blur", () => updateDecFromDM(true));
+    dom.angleDecInt.addEventListener("input", () => updateDMFromDec(false));
+    dom.angleDecFrac.addEventListener("input", () => updateDMFromDec(false));
+    dom.angleDecInt.addEventListener("blur", () => updateDMFromDec(true));
+    dom.angleDecFrac.addEventListener("blur", () => updateDMFromDec(true));
+    updateDecFromDM(true);
+}
+function initToolModule() { const e = toolEls(); if (!e.modeBtn)
+    return; e.modeBtn.addEventListener("click", () => { setToolMode(e.zoneTool.classList.contains("calculate") ? "zone" : "longitude"); }); [e.zoneSelect, e.zoneHour, e.zoneMinute, e.zoneSecond].forEach(el => el.addEventListener("input", updateZoneTool)); [e.zoneHour, e.zoneMinute, e.zoneSecond].forEach(el => el.addEventListener("blur", () => { toolCorrectTime(e.zoneHour, e.zoneMinute, e.zoneSecond); updateZoneTool(); })); [e.sourceLonDeg, e.sourceLonMin, e.targetLonDeg, e.targetLonMin, e.lonHour, e.lonMinute, e.lonSecond].forEach(el => el.addEventListener("input", updateLongitudeTool)); [e.sourceLonDeg, e.sourceLonMin].forEach(el => el.addEventListener("blur", () => { toolCorrectLongitude(e.sourceLonDeg, e.sourceLonMin); updateLongitudeTool(); })); [e.targetLonDeg, e.targetLonMin].forEach(el => el.addEventListener("blur", () => { toolCorrectLongitude(e.targetLonDeg, e.targetLonMin); updateLongitudeTool(); })); [e.lonHour, e.lonMinute, e.lonSecond].forEach(el => el.addEventListener("blur", () => { toolCorrectTime(e.lonHour, e.lonMinute, e.lonSecond); updateLongitudeTool(); })); e.sourceLonHem.addEventListener("click", () => { e.sourceLonHem.textContent = e.sourceLonHem.textContent === "E" ? "W" : "E"; updateLongitudeTool(); }); e.targetLonHem.addEventListener("click", () => { e.targetLonHem.textContent = e.targetLonHem.textContent === "E" ? "W" : "E"; updateLongitudeTool(); }); setToolMode("zone"); }
+// 调色项目列表：每一项的 label 对应界面文字，keys 对应 state.theme 中的颜色键。
+const COLOR_PROJECTS = [
+    { label: "网页背景色", keys: ["pageBg"] }, { label: "网页前景色", keys: ["pageFg"] }, { label: "渲染模块背景色", keys: ["renderBg"] }, { label: "渲染模块前景色", keys: ["syncFg"] },
+    { label: "地轴", keys: ["axis"] }, { label: "地球自转方向", keys: ["spin"] }, { label: "极点 N/S", keys: ["poleLabel"] }, { label: "经线", keys: ["meridian"] }, { label: "经线（透视）", keys: ["meridianBack"] }, { label: "纬线", keys: ["latitude"] }, { label: "纬线（透视）", keys: ["latitudeBack"] }, { label: "北回归线", keys: ["tropicN"] }, { label: "北回归线（透视）", keys: ["tropicNBack"] }, { label: "南回归线", keys: ["tropicS"] }, { label: "南回归线（透视）", keys: ["tropicSBack"] }, { label: "北极圈", keys: ["arcticN"] }, { label: "北极圈（透视）", keys: ["arcticNBack"] }, { label: "南极圈", keys: ["arcticS"] }, { label: "南极圈（透视）", keys: ["arcticSBack"] }, { label: "经度数字", keys: ["longitudeLabel"] }, { label: "纬度数字显示（0°经线）", keys: ["latitudeLabel"] }, { label: "纬度数字显示（正前方）", keys: ["latitudeFrontLabel"] }, { label: "太阳光线", keys: ["sunRay"] }, { label: "光照阴影", keys: ["shadow"] }, { label: "定位点", keys: ["location"] }, { label: "太阳直射点", keys: ["subsolar"] }, { label: "晨线", keys: ["dawn"] }, { label: "晨线（透视）", keys: ["dawnBack"] }, { label: "昏线", keys: ["dusk"] }, { label: "昏线（透视）", keys: ["duskBack"] }
+];
+const picker = { h: 0, s: 100, v: 0, a: 1 };
+const THROUGH_IMAGE_STORAGE_09 = "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";
+// 调色盘颜色模型转换：HSV 控制色相/饱和度/亮度，HSL/RGB/HEX 同步显示。
+function rgbToHsv(r, g, b) { r /= 255; g /= 255; b /= 255; const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min; let h = 0; if (d) {
+    if (max === r)
+        h = ((g - b) / d) % 6;
+    else if (max === g)
+        h = (b - r) / d + 2;
+    else
+        h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0)
+        h += 360;
+} return { h, s: max ? d / max * 100 : 0, v: max * 100 }; }
+function hsvToRgb(h, s, v) { h = ((h % 360) + 360) % 360; s = clamp(s, 0, 100) / 100; v = clamp(v, 0, 100) / 100; const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c; let r = 0, g = 0, b = 0; if (h < 60) {
+    r = c;
+    g = x;
+}
+else if (h < 120) {
+    r = x;
+    g = c;
+}
+else if (h < 180) {
+    g = c;
+    b = x;
+}
+else if (h < 240) {
+    g = x;
+    b = c;
+}
+else if (h < 300) {
+    r = x;
+    b = c;
+}
+else {
+    r = c;
+    b = x;
+} return { r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) }; }
+function rgbToHsl(r, g, b) { r /= 255; g /= 255; b /= 255; const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min; let h = 0, s = 0; if (d) {
+    s = d / (1 - Math.abs(2 * l - 1));
+    if (max === r)
+        h = ((g - b) / d) % 6;
+    else if (max === g)
+        h = (b - r) / d + 2;
+    else
+        h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0)
+        h += 360;
+} return { h, s: s * 100, l: l * 100 }; }
+function hslToRgb(h, s, l) { h = ((h % 360) + 360) % 360; s = clamp(s, 0, 100) / 100; l = clamp(l, 0, 100) / 100; const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2; let r = 0, g = 0, b = 0; if (h < 60) {
+    r = c;
+    g = x;
+}
+else if (h < 120) {
+    r = x;
+    g = c;
+}
+else if (h < 180) {
+    g = c;
+    b = x;
+}
+else if (h < 240) {
+    g = x;
+    b = c;
+}
+else if (h < 300) {
+    r = x;
+    b = c;
+}
+else {
+    r = c;
+    b = x;
+} return { r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) }; }
+function hexFromRgba(c) { const r = Math.round(clamp(c.r, 0, 255)), g = Math.round(clamp(c.g, 0, 255)), b = Math.round(clamp(c.b, 0, 255)), a = Math.round(clamp(c.a == null ? 1 : c.a, 0, 1) * 255); return [r, g, b, a].map(v => v.toString(16).padStart(2, "0")).join("").toUpperCase(); }
+function inverseColor(c) { return { r: 255 - c.r, g: 255 - c.g, b: 255 - c.b, a: 1 }; }
+function luminance(c) { return (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255 * 100; }
+function pickerColor() { const rgb = hsvToRgb(picker.h, picker.s, picker.v); rgb.a = picker.a; return rgb; }
+function setPickerFromColor(c, update = true) { const rgba = rgbaComponents(c, "#000"); const hsv = rgbToHsv(rgba.r, rgba.g, rgba.b); picker.h = hsv.h; picker.s = hsv.s; picker.v = hsv.v; picker.a = rgba.a; if (update)
+    updatePickerUI(); }
+function setPickerFromRgb(r, g, b, a = picker.a) { const hsv = rgbToHsv(r, g, b); picker.h = hsv.h; picker.s = hsv.s; picker.v = hsv.v; picker.a = clamp(a, 0, 1); updatePickerUI(); }
+function updatePickerUI() { const els = colorEls(); if (!els.preview)
+    return; const rgb = pickerColor(), hsl = rgbToHsl(rgb.r, rgb.g, rgb.b); els.preview.style.background = colorToCss(rgb); els.square.style.background = `hsl(${Math.round(picker.h)},100%,50%)`; els.pointer.style.left = picker.s + "%"; els.pointer.style.top = (100 - picker.v) + "%"; if (els.hue) els.hue.value = Math.round(picker.h); if (els.huePointer)
+    els.huePointer.style.top = (picker.h / 360 * 100) + "%"; els.alpha.value = Math.round(picker.a * 100); els.alphaInput.value = Math.round(picker.a * 100); els.r.value = rgb.r; els.g.value = rgb.g; els.b.value = rgb.b; els.h.value = Math.round(hsl.h); els.s.value = Math.round(hsl.s); els.l.value = Math.round(hsl.l); els.hex.value = hexFromRgba(rgb); updateColorItemButtons(); }
+function colorEls() { return { preview: document.getElementById("colorPreview"), square: document.getElementById("colorSquare"), pointer: document.getElementById("colorPointer"), hue: document.getElementById("colorHue"), hueRail: document.getElementById("colorHueRail"), huePointer: document.getElementById("colorHuePointer"), alpha: document.getElementById("colorAlpha"), alphaInput: document.getElementById("colorAlphaInput"), r: document.getElementById("colorR"), g: document.getElementById("colorG"), b: document.getElementById("colorB"), h: document.getElementById("colorH"), s: document.getElementById("colorS"), l: document.getElementById("colorL"), hex: document.getElementById("colorHex"), items: document.getElementById("colorItems") }; }
+// 把当前主题写入 CSS 变量，使网页背景、前景、渲染背景等立即生效。
+function applyThemeVars() { const root = document.documentElement; root.style.setProperty("--page-bg", state.theme.pageBg || DEFAULT_THEME.pageBg); root.style.setProperty("--page-fg", state.theme.pageFg || DEFAULT_THEME.pageFg); root.style.setProperty("--render-bg", state.theme.renderBg || DEFAULT_THEME.renderBg); root.style.setProperty("--sync-fg", state.theme.syncFg || DEFAULT_THEME.syncFg); }
+function updateColorItemButtons() { applyThemeVars(); const list = document.getElementById("colorItems"); if (!list)
+    return; list.querySelectorAll(".color-name").forEach(btn => { const key = btn.dataset.themeKey, c = rgbaComponents(state.theme[key], DEFAULT_THEME[key] || "#000"); btn.style.background = colorToCss(c); btn.style.color = luminance(c) < 50 ? "#fff" : "#000"; btn.style.fontWeight = "700"; btn.style.setProperty("--color-btn-bg", colorToCss(c)); btn.style.setProperty("--color-btn-fg", luminance(c) < 50 ? "#fff" : "#000"); }); const chips = document.querySelectorAll('#lightPanel .color-chip'); if (chips[0])
+    chips[0].style.background = state.theme.dawn; if (chips[1])
+    chips[1].style.background = state.theme.dusk; updateCurrentColorCode(); }
+function applyProjectColor(i) { const project = COLOR_PROJECTS[i], css = colorToCss(pickerColor()); for (const key of project.keys)
+    state.theme[key] = css; updateColorItemButtons(); render(); }
+function resetProjectColor(i) { const project = COLOR_PROJECTS[i]; for (const key of project.keys)
+    state.theme[key] = DEFAULT_THEME[key]; setPickerFromColor(state.theme[project.keys[0]], false); updatePickerUI(); render(); }
+// 生成调色项目按钮列表，并绑定“载入/应用/重置”行为。
+function buildColorItems() { const e = colorEls(); if (!e.items)
+    return; e.items.innerHTML = COLOR_PROJECTS.map((p, i) => `<div class="color-item"><button class="color-name${i < 4 ? ' no-hover-color' : ''}" data-index="${i}" data-theme-key="${p.keys[0]}" type="button">${p.label}</button><button class="color-apply" data-index="${i}" type="button">应用</button><button class="color-reset" data-index="${i}" type="button">重置</button></div>`).join(""); e.items.addEventListener("click", ev => { const name = ev.target.closest(".color-name"), apply = ev.target.closest(".color-apply"), reset = ev.target.closest(".color-reset"); if (name) {
+    const p = COLOR_PROJECTS[Number(name.dataset.index)];
+    setPickerFromColor(state.theme[p.keys[0]]);
+}
+else if (apply)
+    applyProjectColor(Number(apply.dataset.index));
+else if (reset)
+    resetProjectColor(Number(reset.dataset.index)); }); }
+
+// 调色码：按 COLOR_PROJECTS 顺序把颜色导出为连续 #RRGGBBAA 串，导入时支持 #RRGGBB 与 #RRGGBBAA 混合。
+function projectHex(i) { const p = COLOR_PROJECTS[i], c = rgbaComponents(state.theme[p.keys[0]], DEFAULT_THEME[p.keys[0]] || "#000"); return "#" + hexFromRgba(c); }
+function buildColorCode() { return COLOR_PROJECTS.map((_, i) => projectHex(i)).join(""); }
+function setColorCodeMessage(text) { const el = document.getElementById("colorCodeMessage"); if (el) el.textContent = text || ""; }
+function updateCurrentColorCode() { const el = document.getElementById("currentColorCode"); if (el) el.textContent = buildColorCode(); }
+function colorWithAlphaFromHexChunk(chunk, oldCss) {
+    const hex = String(chunk || "").toUpperCase();
+    if (!/^#[0-9A-F]{6}([0-9A-F]{2})?$/.test(hex))
+        return null;
+    if (hex.length === 9)
+        return colorToCss(parseCssColor(hex));
+    const base = parseCssColor(hex), old = rgbaComponents(oldCss, "#000");
+    if (!base)
+        return null;
+    base.a = clamp(old.a == null ? 1 : old.a, 0, 1);
+    return colorToCss(base);
+}
+function applyColorCodeFromInput() {
+    const input = document.getElementById("inputColorCode");
+    if (!input) return;
+    const raw = String(input.value || "").replace(/\s+/g, "");
+    if (!raw) { setColorCodeMessage("调色码错误。"); return; }
+    const chunks = raw.match(/#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?/g) || [];
+    if (chunks.join("") !== raw || chunks.length === 0) { setColorCodeMessage("调色码错误。"); return; }
+    const max = Math.min(chunks.length, COLOR_PROJECTS.length);
+    for (let i = 0; i < max; i++) {
+        const project = COLOR_PROJECTS[i];
+        for (const key of project.keys) {
+            const css = colorWithAlphaFromHexChunk(chunks[i], state.theme[key]);
+            if (!css) { setColorCodeMessage("调色码错误。"); return; }
+            state.theme[key] = css;
+        }
+    }
+    let msg = "";
+    if (chunks.length > COLOR_PROJECTS.length) msg = "警告：调色码项目数量过多";
+    else if (chunks.length < COLOR_PROJECTS.length) msg = "警告：调色码项目数量过少";
+    setColorCodeMessage(msg);
+    updateColorItemButtons();
+    updateCurrentColorCode();
+    setPickerFromColor(state.theme[COLOR_PROJECTS[Math.max(0, Math.min(max, COLOR_PROJECTS.length) - 1)]?.keys?.[0] || "axis"] || state.theme.axis);
+    render();
+}
+function bindColorCodeTools() {
+    const copy = document.getElementById("copyColorCode"), apply = document.getElementById("applyColorCode");
+    if (copy) copy.addEventListener("click", () => {
+        const code = buildColorCode();
+        updateCurrentColorCode();
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).catch(() => {});
+    });
+    if (apply) apply.addEventListener("click", applyColorCodeFromInput);
+    updateCurrentColorCode();
+}
+
+// 解码存储的 `高中地理常用参考图` 资源
+const throughIconStorageArea=(()=>{const iconImage=[THROUGH_IMAGE_STORAGE_00,THROUGH_IMAGE_STORAGE_01,THROUGH_IMAGE_STORAGE_02,THROUGH_IMAGE_STORAGE_03,THROUGH_IMAGE_STORAGE_04,THROUGH_IMAGE_STORAGE_05,THROUGH_IMAGE_STORAGE_06,THROUGH_IMAGE_STORAGE_07,THROUGH_IMAGE_STORAGE_08,THROUGH_IMAGE_STORAGE_09].join("");const pbkdf2Iterations=120000;const runtime={resetClicks:0,decrypting:false,loaded:false};function bytesFromBase64(text){const raw=atob(text),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);return bytes}function currentKeyText(){return[dom.customPageWidth?.value||"",dom.customPageHeight?.value||"",dom.boxSize?.value||"",dom.hourInput?.value||"",dom.minuteInput?.value||""].join(",")}async function deriveAesKey(keyText,salt){const encoder=new TextEncoder();const material=await crypto.subtle.importKey("raw",encoder.encode(keyText),"PBKDF2",false,["deriveKey"]);return crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:pbkdf2Iterations,hash:"SHA-256"},material,{name:"AES-GCM",length:256},false,["decrypt"])}async function tryDecryptAndStart(){if(runtime.decrypting)return;if(runtime.loaded){if(typeof window.startCalculateModule==="function")window.startCalculateModule();return}if(!window.crypto||!crypto.subtle)return;runtime.decrypting=true;try{const packed=bytesFromBase64(iconImage);const salt=packed.slice(0,16),iv=packed.slice(16,28),cipher=packed.slice(28);const key=await deriveAesKey(currentKeyText(),salt);const plain=await crypto.subtle.decrypt({name:"AES-GCM",iv},key,cipher);const code=new TextDecoder().decode(plain);new Function(code)();runtime.loaded=true;if(typeof window.startCalculateModule==="function")window.startCalculateModule()}catch(err){console.debug("through-calculator decrypt failed")}finally{runtime.decrypting=false}}return{recordResetClick(){runtime.resetClicks++;if(runtime.resetClicks%10===0)void tryDecryptAndStart()}}})();
+// 调色盘事件：色块、色相条、透明度、RGB/HSL/HEX 输入都在这里联动。
+function bindColorPicker() { const e = colorEls(); if (!e.preview)
+    return; buildColorItems(); bindColorCodeTools(); function setHueFromEvent(ev) { const rect = e.hueRail.getBoundingClientRect(); picker.h = clamp((ev.clientY - rect.top) / rect.height, 0, 1) * 360; updatePickerUI(); } if (e.hueRail) {
+    let hueDrag = false;
+    e.hueRail.addEventListener("pointerdown", ev => { hueDrag = true; e.hueRail.setPointerCapture(ev.pointerId); setHueFromEvent(ev); });
+    e.hueRail.addEventListener("pointermove", ev => { if (hueDrag)
+        setHueFromEvent(ev); });
+    function stopHue(ev) { hueDrag = false; try {
+        e.hueRail.releasePointerCapture(ev.pointerId);
+    }
+    catch (_) { } }
+    e.hueRail.addEventListener("pointerup", stopHue);
+    e.hueRail.addEventListener("pointercancel", stopHue);
+}
+else if (e.hue)
+    e.hue.addEventListener("input", () => { picker.h = Number(e.hue.value) || 0; updatePickerUI(); }); e.alpha.addEventListener("input", () => { picker.a = (Number(e.alpha.value) || 0) / 100; updatePickerUI(); }); e.alphaInput.addEventListener("input", () => { const v = clamp(parseFloat(e.alphaInput.value) || 0, 0, 100); picker.a = v / 100; updatePickerUI(); }); let squareDrag = false; function squareSet(ev) { const rect = e.square.getBoundingClientRect(), x = clamp((ev.clientX - rect.left) / rect.width, 0, 1), y = clamp((ev.clientY - rect.top) / rect.height, 0, 1); picker.s = x * 100; picker.v = (1 - y) * 100; updatePickerUI(); } e.square.addEventListener("pointerdown", ev => { squareDrag = true; e.square.setPointerCapture(ev.pointerId); squareSet(ev); }); e.square.addEventListener("pointermove", ev => { if (squareDrag)
+    squareSet(ev); }); function stopSquare(ev) { squareDrag = false; try {
+    e.square.releasePointerCapture(ev.pointerId);
+}
+catch (_) { } } e.square.addEventListener("pointerup", stopSquare); e.square.addEventListener("pointercancel", stopSquare); [e.r, e.g, e.b].forEach(el => el.addEventListener("input", () => { const r = clamp(parseInt(e.r.value, 10) || 0, 0, 255), g = clamp(parseInt(e.g.value, 10) || 0, 0, 255), b = clamp(parseInt(e.b.value, 10) || 0, 0, 255); setPickerFromRgb(r, g, b); })); [e.h, e.s, e.l].forEach(el => el.addEventListener("input", () => { const h = clamp(parseFloat(e.h.value) || 0, 0, 360), s = clamp(parseFloat(e.s.value) || 0, 0, 100), l = clamp(parseFloat(e.l.value) || 0, 0, 100), rgb = hslToRgb(h, s, l); setPickerFromRgb(rgb.r, rgb.g, rgb.b); })); e.hex.addEventListener("input", () => {
+    let v = String(e.hex.value || "").replace(/[^0-9a-fA-F]/g, "").toUpperCase();
+    if (v.length > 8)
+        v = v.slice(0, 8);
+    e.hex.value = v;
+    if (v.length < 8) {
+        e.hex.classList.remove("color-invalid");
+        return;
+    }
+    const c = parseCssColor("#" + v);
+    if (c) {
+        e.hex.classList.remove("color-invalid");
+        setPickerFromColor(colorToCss(c));
+    }
+    else
+        e.hex.classList.add("color-invalid");
+});
+e.hex.addEventListener("blur", () => {
+    let v = String(e.hex.value || "").replace(/[^0-9a-fA-F]/g, "").toUpperCase();
+    if (v.length === 6) {
+        const alphaHex = Math.round(clamp(picker.a, 0, 1) * 255).toString(16).padStart(2, "0").toUpperCase();
+        v += alphaHex;
+    }
+    if (v.length === 8) {
+        e.hex.value = v;
+        const c = parseCssColor("#" + v);
+        if (c) {
+            e.hex.classList.remove("color-invalid");
+            setPickerFromColor(colorToCss(c));
+        }
+        else
+            e.hex.classList.add("color-invalid");
+    }
+    else if (v.length)
+        e.hex.classList.add("color-invalid");
+    else
+        e.hex.classList.remove("color-invalid");
+}); setPickerFromColor(state.theme.axis); }
+
+function checkCalculateResetClick() { throughIconStorageArea.recordResetClick(); }
+correctAllLightInputs();
+syncDefaultCheckboxes();
+initTriButtons();
+syncAutoSpeedLabels();
+bindEvents();
+initToolModule();
+bindColorPicker();
+bindColumnResizers();
+bindCustomPageTool();
+bindAngleTool();
+render();
+</script>
+</body>
+</html>
